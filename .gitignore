@@ -1,0 +1,6 @@
+node_modules/
+data/kaihatu.db
+data/backups/
+data/uploads/
+frontend/dist/
+*.log
