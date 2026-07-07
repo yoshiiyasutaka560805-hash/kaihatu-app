@@ -11,6 +11,8 @@
     timeLimitMinutes: 25,
     remainingSeconds: null,
     timerHandle: null,
+    startedAt: null,
+    resultSubmitted: false,
     currentIndex: 0,
     answers: {},
     order: QUESTIONS.slice(),
@@ -171,6 +173,8 @@
       state.timerEnabled = timerCheckbox.checked;
       state.currentIndex = 0;
       state.answers = {};
+      state.startedAt = Date.now();
+      state.resultSubmitted = false;
       if (state.timerEnabled) {
         state.remainingSeconds = state.timeLimitMinutes * 60;
         startTimer();
@@ -440,6 +444,52 @@
     return { correct: correct, total: state.order.length, byCategory: byCategory };
   }
 
+  // ---------------- Result saving (server mode) ----------------
+  function saveResult(score, pct, statusEl) {
+    if (state.resultSubmitted) return;
+    state.resultSubmitted = true;
+
+    var isHttp = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+    if (!isHttp || typeof window.fetch !== 'function') {
+      showSaveStatus(statusEl, false);
+      return;
+    }
+
+    var payload = {
+      candidate_name: state.candidateName,
+      test_date: state.testDate,
+      total_questions: score.total,
+      correct_count: score.correct,
+      percentage: pct,
+      category_breakdown: score.byCategory,
+      answers: state.answers,
+      duration_seconds: state.startedAt ? Math.round((Date.now() - state.startedAt) / 1000) : null,
+      timer_enabled: state.timerEnabled,
+    };
+
+    fetch('/api/aptitude-results', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function () { showSaveStatus(statusEl, true); })
+      .catch(function () { showSaveStatus(statusEl, false); });
+  }
+
+  function showSaveStatus(statusEl, saved) {
+    clear(statusEl);
+    statusEl.classList.toggle('save-ok', saved);
+    statusEl.classList.toggle('save-fail', !saved);
+    statusEl.appendChild(bi(saved
+      ? { ja: '結果を保存しました。', en: 'Result saved.' }
+      : { ja: '結果はサーバーに保存されていません。印刷して保存してください。', en: 'Result was not saved to the server. Please print to keep a record.' }
+    ));
+  }
+
   // ---------------- Screen: results ----------------
   function goResults() {
     state.screen = 'results';
@@ -478,6 +528,11 @@
       en: 'Overall score: ' + score.correct + ' / ' + score.total + ' (' + pct + '%)',
     }, 'p'));
     screen.appendChild(overall);
+
+    var saveStatus = document.createElement('div');
+    saveStatus.className = 'save-status no-print';
+    screen.appendChild(saveStatus);
+    saveResult(score, pct, saveStatus);
 
     var table = document.createElement('table');
     table.className = 'breakdown-table';
@@ -555,6 +610,8 @@
     state.testDate = todayISO();
     state.timerEnabled = true;
     state.remainingSeconds = null;
+    state.startedAt = null;
+    state.resultSubmitted = false;
     state.currentIndex = 0;
     state.answers = {};
   }

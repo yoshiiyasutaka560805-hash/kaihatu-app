@@ -22,6 +22,10 @@ app.use('/api/monthly',      require('./routes/monthly'));
 app.use('/api/law-alerts',   require('./routes/lawAlerts'));
 app.use('/api/deductions',   require('./routes/deductions'));
 app.use('/api/settings',     require('./routes/settings'));
+app.use('/api/aptitude-results', require('./routes/aptitudeResults'));
+
+// 適性検査ツール（静的配信）
+app.use('/aptitude-test', express.static(path.join(__dirname, '..', 'aptitude-test')));
 
 // サービス種別一覧
 const { getDb } = require('./database/db');

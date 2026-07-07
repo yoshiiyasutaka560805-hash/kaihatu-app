@@ -249,6 +249,21 @@ button { font-family: inherit; cursor: pointer; }
 }
 .bar-inner { height: 100%; background: var(--accent); }
 
+.save-status {
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 0.92em;
+}
+.save-status:empty { display: none; }
+.save-status.save-ok { background: #e7f4ec; border: 1px solid #74b98a; }
+.save-status.save-fail { background: var(--danger-bg); border: 1px solid var(--danger-border); }
+
+.admin-table th, .admin-table td { vertical-align: middle; }
+.admin-actions { white-space: nowrap; }
+.admin-btn { padding: 5px 12px; font-size: 0.86em; margin-right: 6px; }
+.admin-delete { color: #b23a3a; border-color: #b23a3a; }
+
 .print-only { display: none; }
 
 @media print {

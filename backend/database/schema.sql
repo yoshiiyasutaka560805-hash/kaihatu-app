@@ -221,6 +221,24 @@ CREATE TABLE IF NOT EXISTS law_update_alerts (
 );
 
 -- ============================================================
+-- 適性検査（論理思考力）結果
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS aptitude_results (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  candidate_name     TEXT NOT NULL,
+  test_date          TEXT NOT NULL,
+  total_questions    INTEGER NOT NULL,
+  correct_count      INTEGER NOT NULL,
+  percentage         INTEGER NOT NULL,
+  category_breakdown TEXT NOT NULL,   -- JSON: {matrix:{correct,total}, sequence:..., oddOneOut:..., analogy:...}
+  answers            TEXT,            -- JSON: {questionId: selectedIndex}
+  duration_seconds   INTEGER,
+  timer_enabled      INTEGER NOT NULL DEFAULT 0,
+  created_at         DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
 -- ビュー：アセスメント + リスク判定
 -- ============================================================
 

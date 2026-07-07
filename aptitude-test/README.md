@@ -1,8 +1,8 @@
 # 適性検査（論理思考力） / Aptitude Screening (Logical Reasoning)
 
-このディレクトリは、採用選考の参考情報を得るための独立したスタンドアロンツールです。`kaihatu-app`（介護保険加算・法令遵守を管理するツール）とは完全に独立しており、依存関係はありません。
+このディレクトリは、採用選考の参考情報を得るためのツールです。kaihatu-appのバックエンド（Express + SQLite）から配信され、受検結果は既存のデータベース（`data/kaihatu.db`）に保存されます。
 
-This directory contains a standalone tool to support hiring decisions. It is fully independent from `kaihatu-app` (the nursing-care subsidy/compliance tool) and shares no dependencies with it.
+This directory contains a tool to support hiring decisions. It is served by the kaihatu-app backend (Express + SQLite), and test results are saved to the existing database (`data/kaihatu.db`).
 
 ## 1. これは何か／何でないか　What this is / is not
 
@@ -16,20 +16,36 @@ This directory contains a standalone tool to support hiring decisions. It is ful
 
 ## 2. 起動方法　How to run it
 
-ビルドや依存パッケージのインストールは不要です。
+### 通常の使い方（結果がデータベースに保存されます）　Normal use (results are saved to the database)
 
-No build step or dependency installation is required.
-
-1. `aptitude-test/index.html` をダブルクリックしてブラウザで開いてください。
-2. ブラウザのセキュリティ設定等で `file://` からの起動がブロックされる場合は、簡易サーバーを使ってください（例）:
+1. リポジトリ直下の `start.bat` を実行するか、バックエンドのみ起動します:
    ```
-   cd aptitude-test
-   npx serve .
+   cd backend
+   npm install   # 初回のみ
+   npm run dev   # または npm start
    ```
-   または `python -m http.server` などでも構いません。表示されたURL（例: `http://localhost:3000`）をブラウザで開いてください。
+2. ブラウザで **http://localhost:3001/aptitude-test/** を開くと受検画面が表示されます。
+3. 受検が完了すると、結果は自動的に `data/kaihatu.db` の `aptitude_results` テーブルに保存され、結果画面に「結果を保存しました / Result saved」と表示されます。
+4. 保存された結果は **http://localhost:3001/aptitude-test/admin.html** （管理ページ）で一覧・詳細の閲覧、印刷、削除ができます。
 
-1. Double-click `aptitude-test/index.html` to open it in a browser.
-2. If your browser blocks `file://` access for any reason, serve it with a trivial static server instead, e.g. `npx serve .` from inside `aptitude-test/`, or `python -m http.server`, then open the printed URL.
+1. Run `start.bat` at the repo root, or start just the backend: `cd backend && npm install` (first time only) then `npm run dev` (or `npm start`).
+2. Open **http://localhost:3001/aptitude-test/** in a browser to show the candidate test screen.
+3. When a candidate finishes, the result is saved automatically to the `aptitude_results` table in `data/kaihatu.db`, and the results screen shows "結果を保存しました / Result saved".
+4. Saved results can be listed, viewed in detail, printed, and deleted at **http://localhost:3001/aptitude-test/admin.html** (admin page).
+
+**管理ページ（admin.html）のURLは候補者に見せない・操作させないでください。** 受検用端末では受検画面（`/aptitude-test/`）のみを開いた状態で渡してください。
+
+**Never show or hand the admin page (admin.html) URL to candidates.** On the test device, open only the candidate screen (`/aptitude-test/`) before handing it over.
+
+保存された結果データは、kaihatu-appの既存の自動バックアップ機能（`backend/services/backup.js` による `data/backups/` へのDBバックアップ）の対象に含まれます。
+
+Saved results are covered by kaihatu-app's existing automatic backup (`backend/services/backup.js`, which backs up the DB into `data/backups/`).
+
+### オフラインモード（保存されません）　Offline mode (results are NOT saved)
+
+`aptitude-test/index.html` をダブルクリックして直接開くことも可能です。この場合もテストは最後まで動作しますが、**結果はサーバーに保存されません**（結果画面にその旨が表示されます）。印刷での保存のみになります。
+
+You can also double-click `aptitude-test/index.html` to open it directly. The test still works end to end, but **results are not saved to the server** (the results screen says so). Printing is then the only way to keep a record.
 
 ## 3. 公平な運用　Fair, consistent administration
 
@@ -47,21 +63,19 @@ No build step or dependency installation is required.
 - Results (name, score, etc.) are the candidate's personal data. Use them only for the stated hiring purpose and keep them securely.
 - Store printed result sheets as securely as other hiring documents, and dispose of them appropriately when no longer needed.
 
-## 5. クライアントサイドのみであることによる制限　Client-side security limitation
+## 5. セキュリティ上の制限　Security limitations
 
-このツールはサーバーやデータベースを持たない静的なHTML/CSS/JSのみで構成されています。そのため、正解データは `questions.js` にブラウザ上でそのまま読み込まれており、技術的な知識のある候補者であればブラウザの開発者ツールで正解を閲覧できてしまう可能性があります。
+受検画面はブラウザ上で動作するため、正解データは `questions.js` としてブラウザにそのまま読み込まれます。技術的な知識のある候補者であれば、ブラウザの開発者ツールで正解を閲覧できてしまう可能性があります。また、結果保存API・管理ページには認証がなく、ローカルネットワーク内での社内利用を前提としています。
 
 - **必ず対面で、社内管理端末を使い、監督者のもとで実施してください。**
 - 候補者にこのツール一式を配布したり、持ち帰り・オンラインでの無監督実施をさせたりしないでください。
-- このディレクトリを公開Webサーバーに置かないでください。
+- このバックエンドをインターネット上に公開しないでください（正解データと候補者の個人情報の両方が露出します）。
 
-This is an intentional, accepted limitation of a backend-free static tool (no backend was requested for this use case) -- it is not something this tool attempts to engineer around.
-
-This tool is entirely static HTML/CSS/JS with no server or database. Because of that, the answer key in `questions.js` is loaded directly into the browser, and a technically sophisticated candidate could view it via browser developer tools.
+Because the candidate screen runs in the browser, the answer key in `questions.js` is loaded directly into the browser, and a technically sophisticated candidate could view it via developer tools. The results API and admin page have no authentication and are intended for internal, local-network use only.
 
 - **Always administer this test in person, on a company-controlled device, under supervision.**
 - Do not distribute the tool's files to candidates, or allow unsupervised/take-home/online use.
-- Do not publish this directory on a public web server.
+- Do not expose this backend to the public internet (it would expose both the answer key and candidates' personal data).
 
 ## 6. カスタマイズ・拡張　Customizing and extending
 
@@ -75,10 +89,18 @@ This tool is entirely static HTML/CSS/JS with no server or database. Because of 
 
 ```
 aptitude-test/
-├── index.html      # 画面のシェル（開始／設問／レビュー／結果）
+├── index.html      # 受検画面のシェル（開始／設問／レビュー／結果）
+├── admin.html      # 管理ページのシェル（結果一覧・詳細）※候補者に見せない
 ├── style.css       # スタイル＋印刷用スタイル
 ├── shapes.js       # 図形記述子 → SVG描画エンジン
 ├── questions.js    # 設問データ＋バイリンガル文言
-├── app.js          # 画面遷移・採点ロジック
+├── app.js          # 受検画面の遷移・採点・結果保存ロジック
+├── admin.js        # 管理ページのロジック（一覧・詳細・削除・印刷）
 └── README.md       # このファイル
 ```
+
+関連するバックエンド側のファイル / Related backend files:
+
+- `backend/routes/aptitudeResults.js` — 結果の保存・一覧・詳細・削除API
+- `backend/database/schema.sql` — `aptitude_results` テーブル定義
+- `backend/server.js` — このディレクトリの静的配信とAPIのマウント
