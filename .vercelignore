@@ -1,0 +1,10 @@
+# Deploy only the candidate-facing aptitude test.
+# The backend, React frontend, and database must never be uploaded.
+*
+!vercel.json
+!aptitude-test
+# Admin page and internal docs are excluded from the public deployment:
+# the results API has no auth, and admin.html is for internal HR use only.
+aptitude-test/admin.html
+aptitude-test/admin.js
+aptitude-test/README.md
