@@ -249,6 +249,17 @@ button { font-family: inherit; cursor: pointer; }
 }
 .bar-inner { height: 100%; background: var(--accent); }
 
+.iq-block {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 1.05em;
+}
+.iq-note { font-size: 0.78em; color: var(--muted); margin: 6px 0 0; }
+.iq-note .lang-ja { font-weight: 400; }
+
 .save-status {
   border-radius: 8px;
   padding: 10px 14px;

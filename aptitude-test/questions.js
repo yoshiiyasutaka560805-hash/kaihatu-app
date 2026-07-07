@@ -59,18 +59,36 @@ var CATEGORIES = {
 var STRINGS = {
   appTitle: { ja: '適性検査（論理思考力）', en: 'Aptitude Screening (Logical Reasoning)' },
   introDisclaimer: {
-    ja: '本テストは、採用選考の参考情報を得るための社内スクリーニングツールです。心理測定学的に標準化・妥当性検証された知能検査ではなく、「IQスコア」等の較正済み指数を算出するものではありません。結果は数ある選考材料の一つとしてご参照いただき、これのみをもって採否を決定しないでください。国籍・言語的背景にかかわらず、すべての候補者に同一の条件・時間・方法で実施してください。結果は候補者の個人情報として厳重に管理し、目的外に利用しないでください。',
-    en: 'This tool is an internal screening aid to support hiring decisions. It is not a standardized or professionally normed intelligence test, and it does not produce a calibrated "IQ score" or any similar index. Treat the results as one input among several, never as the sole basis for a hiring decision. Administer this test identically to every candidate, regardless of nationality or language background. Results are confidential personal information and must be stored and used accordingly.',
+    ja: '本テストは、採用選考の参考情報を得るための社内スクリーニングツールです。心理測定学的に標準化・妥当性検証された知能検査ではありません。結果画面に表示される「IQ換算値」は一般的な受検者分布を仮定した簡易的な推定値であり、専門機関で実施される標準化された知能検査のIQとは異なります。結果は数ある選考材料の一つとしてご参照いただき、これのみをもって採否を決定しないでください。国籍・言語的背景にかかわらず、すべての候補者に同一の条件・時間・方法で実施してください。結果は候補者の個人情報として厳重に管理し、目的外に利用しないでください。',
+    en: 'This tool is an internal screening aid to support hiring decisions. It is not a standardized or professionally normed intelligence test. The "estimated IQ-equivalent" shown on the results screen is a rough conversion based on an assumed test-taker distribution, and differs from an IQ obtained through a professionally administered standardized test. Treat the results as one input among several, never as the sole basis for a hiring decision. Administer this test identically to every candidate, regardless of nationality or language background. Results are confidential personal information and must be stored and used accordingly.',
   },
   resultsDisclaimer: {
-    ja: 'この結果は参考情報であり、標準化された知能検査のスコアではありません。単独で採否を判断せず、面接など他の選考要素と併せてご検討ください。',
-    en: 'These results are for reference only and are not a standardized intelligence-test score. Do not use them alone to make a hiring decision -- combine them with interviews and other selection criteria.',
+    ja: 'この結果は参考情報であり、標準化された知能検査のスコアではありません。IQ換算値も仮定分布に基づく簡易推定値です。単独で採否を判断せず、面接など他の選考要素と併せてご検討ください。',
+    en: 'These results are for reference only and are not a standardized intelligence-test score. The estimated IQ-equivalent is a rough estimate based on an assumed distribution. Do not use them alone to make a hiring decision -- combine them with interviews and other selection criteria.',
+  },
+  iqLabel: {
+    ja: 'IQ換算値（簡易推定・参考値）',
+    en: 'Estimated IQ-equivalent (approximate, for reference)',
+  },
+  iqNote: {
+    ja: '※ 平均100・標準偏差15のスケールに、想定受検者分布（平均18問正答・標準偏差5問）を仮定して換算した参考値です（表示範囲60〜145）。標準化された知能検査の結果ではありません。',
+    en: '* Converted to a mean-100 / SD-15 scale assuming a typical test-taker distribution (mean 18 correct, SD 5); displayed range 60-145. This is not a standardized intelligence-test result.',
   },
   printFooter: {
     ja: '社内選考参考資料（非標準化ツール）／取扱厳重注意',
     en: 'Internal screening reference -- non-standardized tool. Confidential.',
   },
 };
+
+// IQ換算（簡易推定）: 想定受検者分布に基づき平均100・標準偏差15のスケールへ変換する。
+// 実受検データが蓄積されたら mean / sd を実測値に更新すること（README参照）。
+var IQ_SCALE = { mean: 18, sd: 5, min: 60, max: 145 };
+
+function estimateIQ(correctCount) {
+  var z = (correctCount - IQ_SCALE.mean) / IQ_SCALE.sd;
+  var iq = Math.round(100 + 15 * z);
+  return Math.max(IQ_SCALE.min, Math.min(IQ_SCALE.max, iq));
+}
 
 var QUESTIONS = [
   // ---------------- Matrix reasoning (3x3 grid, index 8 = blank) ----------------

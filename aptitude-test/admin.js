@@ -172,6 +172,7 @@
         ['所要時間 / Duration', formatDuration(row.duration_seconds)],
         ['制限時間 / Time Limit', row.timer_enabled ? 'あり（25分）/ Yes (25 min)' : 'なし / No'],
         ['総合スコア / Overall', row.correct_count + ' / ' + row.total_questions + '（' + row.percentage + '%）'],
+        ['IQ換算値（参考値） / Est. IQ-equivalent', String(estimateIQ(row.correct_count))],
       ];
       var metaBody = document.createElement('tbody');
       metaRows.forEach(function (pair) {

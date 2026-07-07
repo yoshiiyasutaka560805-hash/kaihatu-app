@@ -7,11 +7,13 @@ This directory contains a tool to support hiring decisions. It is served by the 
 ## 1. これは何か／何でないか　What this is / is not
 
 - 図形パターンを使った**非言語的な論理思考力**を測る社内スクリーニングツールです。国籍や言語による有利・不利をできるだけ減らすため、設問は図形・色・回転・個数などの視覚的な要素のみで構成されています。
-- **標準化・妥当性検証された心理測定学的な知能検査ではありません。** 「IQスコア」のような較正済みの指数は算出しません。結果画面には素点・正答率・カテゴリ別の内訳のみを表示します。
+- **標準化・妥当性検証された心理測定学的な知能検査ではありません。** 結果画面には素点・正答率・カテゴリ別の内訳に加えて「IQ換算値（簡易推定・参考値）」を表示しますが、これは想定受検者分布（平均18問正答・標準偏差5問）を仮定して平均100・標準偏差15のスケールに換算した**簡易的な推定値**であり、専門機関で実施される標準化された知能検査のIQとは異なります（表示範囲は60〜145にクランプ）。
+- IQ換算値の精度を高めたい場合は、実際の受検データが蓄積された後、`questions.js` の `IQ_SCALE` の `mean`（平均正答数）と `sd`（標準偏差）を実測値に更新してください。過去の結果のIQ換算値は保存せず毎回 `correct_count` から計算するため、更新後の換算式が過去分にも一貫して適用されます。
 - 結果は採用選考における**参考情報の一つ**として扱ってください。この結果のみで採否を決定しないでください。面接など他の選考要素と必ず併せて判断してください。
 
 - This is an internal screening tool that measures **non-verbal logical reasoning** using visual shape patterns, designed to minimize any advantage or disadvantage based on nationality or language.
-- **It is not a standardized, professionally validated intelligence test.** It does not produce a calibrated "IQ score." The results screen shows only a raw score, percentage, and category breakdown.
+- **It is not a standardized, professionally validated intelligence test.** In addition to the raw score, percentage, and category breakdown, the results screen shows an "estimated IQ-equivalent (approximate, for reference)" -- a **rough estimate** converted to a mean-100 / SD-15 scale assuming a typical test-taker distribution (mean 18 correct, SD 5), clamped to a 60-145 display range. It differs from an IQ obtained through a professionally administered standardized test.
+- To improve the accuracy of the estimate once real test data accumulates, update `mean` and `sd` in `IQ_SCALE` in `questions.js` with your measured values. The IQ-equivalent is never stored -- it is always recomputed from `correct_count`, so an updated formula applies consistently to past results too.
 - Treat the results as **one input among several** in a hiring decision. Never use this result alone to decide whether to hire someone -- always combine it with interviews and other selection criteria.
 
 ## 2. 起動方法　How to run it

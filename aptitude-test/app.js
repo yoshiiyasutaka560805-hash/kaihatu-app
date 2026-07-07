@@ -529,6 +529,19 @@
     }, 'p'));
     screen.appendChild(overall);
 
+    var iq = estimateIQ(score.correct);
+    var iqBlock = document.createElement('div');
+    iqBlock.className = 'iq-block';
+    iqBlock.appendChild(bi({
+      ja: STRINGS.iqLabel.ja + ': ' + iq,
+      en: STRINGS.iqLabel.en + ': ' + iq,
+    }, 'p'));
+    var iqNote = document.createElement('p');
+    iqNote.className = 'iq-note';
+    iqNote.appendChild(bi(STRINGS.iqNote));
+    iqBlock.appendChild(iqNote);
+    screen.appendChild(iqBlock);
+
     var saveStatus = document.createElement('div');
     saveStatus.className = 'save-status no-print';
     screen.appendChild(saveStatus);
