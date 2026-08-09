@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 
 const NAV_ITEMS = [
   { to: '/',             label: 'ダッシュボード', icon: '🏠' },
@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { to: '/export',       label: '監査提出資料',   icon: '🖨️' },
 ];
 
-export default function Layout() {
+export default function Layout({ children }) {
   return (
     <div className="app-shell">
       <aside className="sidebar no-print">
@@ -32,7 +32,7 @@ export default function Layout() {
         </nav>
       </aside>
       <main className="main-content">
-        <Outlet />
+        {children}
       </main>
     </div>
   );
