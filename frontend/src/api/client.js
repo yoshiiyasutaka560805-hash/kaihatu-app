@@ -108,4 +108,28 @@ export const api = {
   checkResidenceAlertsNow: () => request('/residence-alerts/check-now', { method: 'POST' }),
 
   getSpecificSkillDashboard: () => request('/dashboard/specific-skill'),
+
+  getResidenceCases: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/residence-cases${qs ? `?${qs}` : ''}`);
+  },
+  getResidenceCase:    (id)       => request(`/residence-cases/${id}`),
+  createResidenceCase: (data)     => request('/residence-cases', { method: 'POST', body: data }),
+  updateResidenceCase: (id, data) => request(`/residence-cases/${id}`, { method: 'PUT', body: data }),
+  updateResidenceCaseStage: (id, stage, comment) =>
+    request(`/residence-cases/${id}/stage`, { method: 'PUT', body: { stage, comment } }),
+  getCaseDocumentItems: (caseType) => request(`/residence-cases/case-document-items/${caseType}`),
+  saveCaseDocumentChecks: (id, checks) =>
+    request(`/residence-cases/${id}/document-checks`, { method: 'POST', body: { checks } }),
+
+  getTasks:   (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/tasks${qs ? `?${qs}` : ''}`);
+  },
+  getTask:        (id)       => request(`/tasks/${id}`),
+  createTask:     (data)     => request('/tasks', { method: 'POST', body: data }),
+  updateTask:     (id, data) => request(`/tasks/${id}`, { method: 'PUT', body: data }),
+  updateTaskStatus: (id, status) => request(`/tasks/${id}/status`, { method: 'PUT', body: { status } }),
+  deleteTask:     (id)       => request(`/tasks/${id}`, { method: 'DELETE' }),
+  addTaskComment: (id, comment) => request(`/tasks/${id}/comments`, { method: 'POST', body: { comment } }),
 };

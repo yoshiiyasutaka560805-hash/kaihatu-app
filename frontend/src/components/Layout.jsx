@@ -19,6 +19,8 @@ const NAV_SECTIONS = [
     items: [
       { to: '/workers', label: '従業員一覧', icon: '🌐' },
       { to: '/residence-alerts', label: '在留期限アラート', icon: '⏰' },
+      { to: '/residence-cases', label: '案件管理', icon: '📁' },
+      { to: '/tasks', label: 'タスク管理', icon: '✅' },
     ],
   },
 ];

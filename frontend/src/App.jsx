@@ -17,6 +17,9 @@ import WorkerList from './pages/WorkerList';
 import WorkerNew from './pages/WorkerNew';
 import WorkerDetail from './pages/WorkerDetail';
 import ResidenceAlertList from './pages/ResidenceAlertList';
+import ResidenceCaseList from './pages/ResidenceCaseList';
+import ResidenceCaseDetail from './pages/ResidenceCaseDetail';
+import TaskBoard from './pages/TaskBoard';
 
 function AppLayout() {
   return (
@@ -45,6 +48,9 @@ export default function App() {
           <Route path="/workers/new" element={<WorkerNew />} />
           <Route path="/workers/:id" element={<WorkerDetail />} />
           <Route path="/residence-alerts" element={<ResidenceAlertList />} />
+          <Route path="/residence-cases" element={<ResidenceCaseList />} />
+          <Route path="/residence-cases/:id" element={<ResidenceCaseDetail />} />
+          <Route path="/tasks" element={<TaskBoard />} />
           <Route
             path="/users"
             element={<RoleGate role="admin"><UserManagement /></RoleGate>}

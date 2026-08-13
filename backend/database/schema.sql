@@ -443,3 +443,106 @@ SELECT
     ELSE 'green'
   END AS residence_risk_level
 FROM foreign_workers fw;
+
+-- ============================================================
+-- 特定技能外国人管理：在留資格申請案件（7段階）
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS residence_cases (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  foreign_worker_id   INTEGER NOT NULL REFERENCES foreign_workers(id) ON DELETE CASCADE,
+  case_type           TEXT NOT NULL CHECK(case_type IN (
+                        'certificate_of_eligibility','status_change','renewal','extension','other'
+                      )),
+  stage               TEXT NOT NULL DEFAULT 'collecting'
+                       CHECK(stage IN (
+                         'collecting','drafting','internal_review',
+                         'ready_to_submit','submitted','approved','rejected'
+                       )),
+  submission_deadline TEXT,
+  submitted_date      TEXT,
+  decided_date        TEXT,
+  decision_result     TEXT,
+  decision_notes      TEXT,
+  responsible_user_id INTEGER REFERENCES users(id),
+  notes               TEXT,
+  created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS residence_case_status_history (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  residence_case_id INTEGER NOT NULL REFERENCES residence_cases(id) ON DELETE CASCADE,
+  from_stage        TEXT,
+  to_stage          TEXT NOT NULL,
+  comment           TEXT,
+  changed_by        INTEGER REFERENCES users(id),
+  changed_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 提出書類チェックリストマスタ（requirement_itemsパターンの転用）
+CREATE TABLE IF NOT EXISTS case_document_items (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  case_type   TEXT NOT NULL,
+  item_name   TEXT NOT NULL,
+  submit_to   TEXT,
+  is_required INTEGER NOT NULL DEFAULT 1,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(case_type, item_name)
+);
+
+CREATE TABLE IF NOT EXISTS case_document_checks (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  residence_case_id     INTEGER NOT NULL REFERENCES residence_cases(id) ON DELETE CASCADE,
+  case_document_item_id INTEGER NOT NULL REFERENCES case_document_items(id),
+  is_submitted          INTEGER CHECK(is_submitted IN (0,1)),
+  submitted_date        TEXT,
+  notes                 TEXT,
+  checked_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(residence_case_id, case_document_item_id)
+);
+
+-- ============================================================
+-- タスク管理
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  foreign_worker_id INTEGER REFERENCES foreign_workers(id) ON DELETE CASCADE,
+  residence_case_id INTEGER REFERENCES residence_cases(id) ON DELETE CASCADE,
+  title             TEXT NOT NULL,
+  description       TEXT,
+  task_type         TEXT NOT NULL DEFAULT 'other'
+                     CHECK(task_type IN ('document_request','seal_request','interview','submission','other')),
+  assignee_user_id  INTEGER REFERENCES users(id),
+  due_date          TEXT,
+  priority          TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low','normal','high')),
+  status            TEXT NOT NULL DEFAULT 'todo' CHECK(status IN ('todo','in_progress','done','cancelled')),
+  created_by        INTEGER REFERENCES users(id),
+  created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  completed_at      DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS task_comments (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  comment    TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE VIEW IF NOT EXISTS residence_case_with_progress AS
+SELECT
+  rc.*,
+  fw.name_native, fw.name_romaji, fw.nationality,
+  u.display_name AS responsible_name,
+  (
+    SELECT COUNT(*) FROM case_document_checks cdc WHERE cdc.residence_case_id = rc.id
+  ) AS document_total,
+  (
+    SELECT COUNT(*) FROM case_document_checks cdc WHERE cdc.residence_case_id = rc.id AND cdc.is_submitted = 1
+  ) AS document_submitted
+FROM residence_cases rc
+JOIN foreign_workers fw ON fw.id = rc.foreign_worker_id
+LEFT JOIN users u ON u.id = rc.responsible_user_id;
