@@ -69,4 +69,33 @@ router.get('/alerts', (req, res) => {
   res.json(alerts);
 });
 
+// GET /api/dashboard/specific-skill - 特定技能外国人管理サマリー
+router.get('/specific-skill', (req, res) => {
+  const db = getDb();
+
+  const summary = db.prepare(`
+    SELECT
+      COUNT(*) AS total_active,
+      SUM(CASE WHEN residence_risk_level = 'red'    THEN 1 ELSE 0 END) AS red_count,
+      SUM(CASE WHEN residence_risk_level = 'yellow' THEN 1 ELSE 0 END) AS yellow_count
+    FROM foreign_worker_with_risk
+    WHERE is_active = 1 AND employment_status = 'active'
+  `).get();
+
+  const unacknowledgedAlerts = db.prepare(`
+    SELECT COUNT(*) AS count FROM residence_alerts WHERE is_acknowledged = 0
+  `).get();
+
+  const upcomingExpiries = db.prepare(`
+    SELECT id, name_native, residence_period_to, residence_risk_level
+    FROM foreign_worker_with_risk
+    WHERE is_active = 1 AND employment_status = 'active'
+      AND residence_period_to IS NOT NULL AND residence_period_to <= date('now', '+90 days')
+    ORDER BY residence_period_to ASC
+    LIMIT 5
+  `).all();
+
+  res.json({ summary, unacknowledgedAlertCount: unacknowledgedAlerts.count, upcomingExpiries });
+});
+
 module.exports = router;

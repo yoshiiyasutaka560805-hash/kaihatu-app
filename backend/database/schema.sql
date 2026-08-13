@@ -409,6 +409,24 @@ CREATE TABLE IF NOT EXISTS worker_files (
   uploaded_at       DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- alert_typeにはPhase3/4で使うtask_due/report_due/case_deadlineも含めておくが、
+-- 実際に生成するのは本Phaseではresidence_expiry/passport_expiryのみ
+CREATE TABLE IF NOT EXISTS residence_alerts (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  foreign_worker_id INTEGER NOT NULL REFERENCES foreign_workers(id) ON DELETE CASCADE,
+  alert_type        TEXT NOT NULL CHECK(alert_type IN (
+                      'residence_expiry','passport_expiry','task_due','report_due','case_deadline'
+                    )),
+  source_date       TEXT NOT NULL,
+  threshold_days    INTEGER NOT NULL,
+  message           TEXT NOT NULL,
+  is_acknowledged    INTEGER NOT NULL DEFAULT 0,
+  acknowledged_by    INTEGER REFERENCES users(id),
+  acknowledged_at    DATETIME,
+  created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(foreign_worker_id, alert_type, source_date, threshold_days)
+);
+
 CREATE VIEW IF NOT EXISTS foreign_worker_with_risk AS
 SELECT
   fw.*,

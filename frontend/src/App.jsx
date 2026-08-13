@@ -16,6 +16,7 @@ import UserManagement from './pages/UserManagement';
 import WorkerList from './pages/WorkerList';
 import WorkerNew from './pages/WorkerNew';
 import WorkerDetail from './pages/WorkerDetail';
+import ResidenceAlertList from './pages/ResidenceAlertList';
 
 function AppLayout() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
           <Route path="/workers" element={<WorkerList />} />
           <Route path="/workers/new" element={<WorkerNew />} />
           <Route path="/workers/:id" element={<WorkerDetail />} />
+          <Route path="/residence-alerts" element={<ResidenceAlertList />} />
           <Route
             path="/users"
             element={<RoleGate role="admin"><UserManagement /></RoleGate>}

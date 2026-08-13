@@ -49,6 +49,7 @@ app.use('/api/deductions',   require('./routes/deductions'));
 app.use('/api/settings',     require('./routes/settings'));
 app.use('/api/users',        require('./routes/users'));
 app.use('/api/workers',      require('./routes/workers'));
+app.use('/api/residence-alerts', require('./routes/residenceAlerts'));
 
 // 適性検査ツール（静的配信）
 app.use('/aptitude-test', express.static(path.join(__dirname, '..', 'aptitude-test')));
@@ -62,8 +63,11 @@ app.get('/api/service-types', (req, res) => {
 // スケジューラー起動
 const { startScheduler } = require('./services/lawUpdateChecker');
 const { startBackupScheduler } = require('./services/backup');
+const { startScheduler: startResidenceAlertScheduler, checkAll: checkResidenceAlerts } = require('./services/residenceAlertChecker');
 startScheduler();
 startBackupScheduler();
+startResidenceAlertScheduler();
+checkResidenceAlerts(); // 起動時に一度即時チェック
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {

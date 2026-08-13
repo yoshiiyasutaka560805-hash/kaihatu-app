@@ -18,6 +18,7 @@ const NAV_SECTIONS = [
     section: '特定技能外国人管理',
     items: [
       { to: '/workers', label: '従業員一覧', icon: '🌐' },
+      { to: '/residence-alerts', label: '在留期限アラート', icon: '⏰' },
     ],
   },
 ];

@@ -102,4 +102,10 @@ export const api = {
   },
   deleteWorkerFile: (workerId, fileId) => request(`/workers/${workerId}/files/${fileId}`, { method: 'DELETE' }),
   workerFileDownloadUrl: (workerId, fileId) => `/api/workers/${workerId}/files/${fileId}/download`,
+
+  getResidenceAlerts: (all = false) => request(`/residence-alerts${all ? '?acknowledged=all' : ''}`),
+  acknowledgeResidenceAlert: (id) => request(`/residence-alerts/${id}/acknowledge`, { method: 'PUT' }),
+  checkResidenceAlertsNow: () => request('/residence-alerts/check-now', { method: 'POST' }),
+
+  getSpecificSkillDashboard: () => request('/dashboard/specific-skill'),
 };
