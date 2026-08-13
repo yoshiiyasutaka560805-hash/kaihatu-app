@@ -13,6 +13,9 @@ import MonthlyRecord from './pages/MonthlyRecord';
 import LawUpdates from './pages/LawUpdates';
 import ExportPage from './pages/ExportPage';
 import UserManagement from './pages/UserManagement';
+import WorkerList from './pages/WorkerList';
+import WorkerNew from './pages/WorkerNew';
+import WorkerDetail from './pages/WorkerDetail';
 
 function AppLayout() {
   return (
@@ -37,6 +40,9 @@ export default function App() {
           <Route path="/monthly" element={<MonthlyRecord />} />
           <Route path="/law-updates" element={<LawUpdates />} />
           <Route path="/export" element={<ExportPage />} />
+          <Route path="/workers" element={<WorkerList />} />
+          <Route path="/workers/new" element={<WorkerNew />} />
+          <Route path="/workers/:id" element={<WorkerDetail />} />
           <Route
             path="/users"
             element={<RoleGate role="admin"><UserManagement /></RoleGate>}

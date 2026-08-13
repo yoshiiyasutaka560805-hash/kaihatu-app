@@ -330,3 +330,98 @@ SELECT
 FROM assessments a
 JOIN subsidies s    ON s.id  = a.subsidy_id
 JOIN service_types st ON st.id = a.service_type_id;
+
+-- ============================================================
+-- 特定技能外国人管理：従業員マスタ
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS foreign_workers (
+  id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_no                TEXT UNIQUE,
+  name_native                TEXT NOT NULL,
+  name_kana                  TEXT,
+  name_romaji                TEXT NOT NULL,
+  date_of_birth               TEXT,
+  gender                      TEXT,
+  nationality                 TEXT NOT NULL,
+  native_language             TEXT,
+  passport_no                 TEXT,
+  passport_expiry_date        TEXT,
+  residence_card_no           TEXT,
+  residence_status            TEXT,
+  specific_skill_field        TEXT,
+  residence_period_from       TEXT,
+  residence_period_to         TEXT,
+  japanese_level              TEXT,
+  employment_start_date       TEXT,
+  employment_end_date         TEXT,
+  employment_status           TEXT NOT NULL DEFAULT 'active'
+                               CHECK(employment_status IN ('active','on_leave','resigned')),
+  department                  TEXT,
+  address                     TEXT,
+  phone                       TEXT,
+  email                       TEXT,
+  emergency_contact_name      TEXT,
+  emergency_contact_relation  TEXT,
+  emergency_contact_phone     TEXT,
+  is_active                   INTEGER NOT NULL DEFAULT 1,
+  created_by                  INTEGER REFERENCES users(id),
+  updated_by                  INTEGER REFERENCES users(id),
+  created_at                  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at                  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- note_type='interview'/'consultation'の記録は、Phase4で支援計画の実施記録
+-- （support_plan_checks、未実装）に自動リンクする想定。support_plan_check_id は
+-- そのための予約カラム。SQLiteはforeign_keys=ON時、値がNULLでも参照先テーブルが
+-- 実在しないと "no such table" で失敗するため、Phase4でsupport_plan_checksを
+-- 作成するまではREFERENCES制約を付けない（プレーンなINTEGER列として保持）
+CREATE TABLE IF NOT EXISTS worker_notes (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  foreign_worker_id     INTEGER NOT NULL REFERENCES foreign_workers(id) ON DELETE CASCADE,
+  note_type             TEXT NOT NULL DEFAULT 'general'
+                         CHECK(note_type IN ('general','interview','complaint','consultation')),
+  content               TEXT NOT NULL,
+  is_important          INTEGER NOT NULL DEFAULT 0,
+  support_plan_check_id INTEGER,
+  author_user_id        INTEGER NOT NULL REFERENCES users(id),
+  created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- related_case_id（Phase3のresidence_cases）とrelated_check_id（Phase4の
+-- support_plan_checks）も同様の理由でREFERENCES制約なしの予約カラムとする
+CREATE TABLE IF NOT EXISTS worker_files (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  foreign_worker_id INTEGER NOT NULL REFERENCES foreign_workers(id) ON DELETE CASCADE,
+  category          TEXT NOT NULL CHECK(category IN (
+                      'residence_card','passport','contract','certificate',
+                      'support_evidence','photo','other'
+                    )),
+  related_case_id   INTEGER,
+  related_check_id  INTEGER,
+  original_name     TEXT NOT NULL,
+  stored_path       TEXT NOT NULL,
+  file_size_bytes   INTEGER,
+  mime_type         TEXT,
+  note              TEXT,
+  uploaded_by       INTEGER REFERENCES users(id),
+  uploaded_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE VIEW IF NOT EXISTS foreign_worker_with_risk AS
+SELECT
+  fw.*,
+  (
+    SELECT COUNT(*) FROM worker_notes wn WHERE wn.foreign_worker_id = fw.id
+  ) AS note_count,
+  (
+    SELECT COUNT(*) FROM worker_files wf WHERE wf.foreign_worker_id = fw.id
+  ) AS file_count,
+  CASE
+    WHEN fw.residence_period_to IS NOT NULL AND fw.residence_period_to < date('now') THEN 'red'
+    WHEN fw.residence_period_to IS NOT NULL AND fw.residence_period_to <= date('now', '+30 days') THEN 'red'
+    WHEN fw.residence_period_to IS NOT NULL AND fw.residence_period_to <= date('now', '+90 days') THEN 'yellow'
+    ELSE 'green'
+  END AS residence_risk_level
+FROM foreign_workers fw;

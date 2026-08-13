@@ -77,4 +77,29 @@ export const api = {
     request(`/deductions${activeOnly ? '?active=1' : ''}`),
   addDeduction:    (data) => request('/deductions', { method: 'POST', body: data }),
   resolveDeduction: (id, data) => request(`/deductions/${id}/resolve`, { method: 'PUT', body: data }),
+
+  getWorkers: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/workers${qs ? `?${qs}` : ''}`);
+  },
+  getWorker:       (id)       => request(`/workers/${id}`),
+  createWorker:    (data)     => request('/workers', { method: 'POST', body: data }),
+  updateWorker:    (id, data) => request(`/workers/${id}`, { method: 'PUT', body: data }),
+  deactivateWorker: (id)      => request(`/workers/${id}/deactivate`, { method: 'PUT' }),
+
+  getWorkerNotes:  (workerId)       => request(`/workers/${workerId}/notes`),
+  addWorkerNote:   (workerId, data) => request(`/workers/${workerId}/notes`, { method: 'POST', body: data }),
+  updateWorkerNote: (workerId, noteId, data) => request(`/workers/${workerId}/notes/${noteId}`, { method: 'PUT', body: data }),
+  deleteWorkerNote: (workerId, noteId) => request(`/workers/${workerId}/notes/${noteId}`, { method: 'DELETE' }),
+
+  uploadWorkerFile: (workerId, category, file, note = '') => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('category', category);
+    if (note) form.append('note', note);
+    return fetch(`/api/workers/${workerId}/files`, { method: 'POST', body: form })
+      .then(r => r.json());
+  },
+  deleteWorkerFile: (workerId, fileId) => request(`/workers/${workerId}/files/${fileId}`, { method: 'DELETE' }),
+  workerFileDownloadUrl: (workerId, fileId) => `/api/workers/${workerId}/files/${fileId}/download`,
 };

@@ -14,6 +14,12 @@ const NAV_SECTIONS = [
       { to: '/export',       label: '監査提出資料',   icon: '🖨️' },
     ],
   },
+  {
+    section: '特定技能外国人管理',
+    items: [
+      { to: '/workers', label: '従業員一覧', icon: '🌐' },
+    ],
+  },
 ];
 
 const ADMIN_ITEMS = [

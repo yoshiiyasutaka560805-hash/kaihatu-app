@@ -48,6 +48,7 @@ app.use('/api/law-alerts',   require('./routes/lawAlerts'));
 app.use('/api/deductions',   require('./routes/deductions'));
 app.use('/api/settings',     require('./routes/settings'));
 app.use('/api/users',        require('./routes/users'));
+app.use('/api/workers',      require('./routes/workers'));
 
 // 適性検査ツール（静的配信）
 app.use('/aptitude-test', express.static(path.join(__dirname, '..', 'aptitude-test')));
