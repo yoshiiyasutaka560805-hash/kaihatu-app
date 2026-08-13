@@ -20,6 +20,7 @@ import ResidenceAlertList from './pages/ResidenceAlertList';
 import ResidenceCaseList from './pages/ResidenceCaseList';
 import ResidenceCaseDetail from './pages/ResidenceCaseDetail';
 import TaskBoard from './pages/TaskBoard';
+import PeriodicReportList from './pages/PeriodicReportList';
 
 function AppLayout() {
   return (
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="/residence-cases" element={<ResidenceCaseList />} />
           <Route path="/residence-cases/:id" element={<ResidenceCaseDetail />} />
           <Route path="/tasks" element={<TaskBoard />} />
+          <Route path="/periodic-reports" element={<PeriodicReportList />} />
           <Route
             path="/users"
             element={<RoleGate role="admin"><UserManagement /></RoleGate>}

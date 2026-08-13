@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import ExpiryBadge from '../components/ExpiryBadge';
 import WorkerForm from '../components/WorkerForm';
+import SupportPlanSection from '../components/SupportPlanSection';
 
 const EMPLOYMENT_STATUS_LABEL = { active: '在籍中', on_leave: '休職中', resigned: '退職済' };
 const NOTE_TYPE_LABEL = { general: '一般', interview: '面談', complaint: '苦情対応', consultation: '相談' };
@@ -94,6 +95,7 @@ export default function WorkerDetail() {
         />
       </div>
 
+      <SupportPlanSection workerId={id} canEdit={canEdit} />
       <NotesSection workerId={id} notes={worker.notes} canEdit={canEdit} onChanged={load} />
       <FilesSection workerId={id} files={worker.files} canEdit={canEdit} onChanged={load} />
 

@@ -546,3 +546,105 @@ SELECT
 FROM residence_cases rc
 JOIN foreign_workers fw ON fw.id = rc.foreign_worker_id
 LEFT JOIN users u ON u.id = rc.responsible_user_id;
+
+-- ============================================================
+-- 特定技能外国人管理：支援計画（法定10項目）
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS support_plan_items (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_code   TEXT NOT NULL UNIQUE,
+  item_name   TEXT NOT NULL,
+  description TEXT NOT NULL,
+  legal_basis TEXT,
+  sort_order  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS support_plan_checks (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  foreign_worker_id    INTEGER NOT NULL REFERENCES foreign_workers(id) ON DELETE CASCADE,
+  support_plan_item_id INTEGER NOT NULL REFERENCES support_plan_items(id),
+  status               TEXT NOT NULL DEFAULT 'planned'
+                        CHECK(status IN ('planned','in_progress','completed','not_applicable')),
+  implementation_date  TEXT,
+  implementer_name     TEXT,
+  notes                TEXT,
+  checked_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(foreign_worker_id, support_plan_item_id)
+);
+
+CREATE TABLE IF NOT EXISTS support_evidence_template_definitions (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  support_plan_item_id INTEGER NOT NULL REFERENCES support_plan_items(id),
+  evidence_name        TEXT NOT NULL,
+  is_required          INTEGER NOT NULL DEFAULT 1,
+  sort_order           INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(support_plan_item_id, evidence_name)
+);
+
+CREATE TABLE IF NOT EXISTS support_evidence_checks (
+  id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+  support_plan_check_id    INTEGER NOT NULL REFERENCES support_plan_checks(id) ON DELETE CASCADE,
+  evidence_template_def_id INTEGER NOT NULL REFERENCES support_evidence_template_definitions(id),
+  is_confirmed             INTEGER CHECK(is_confirmed IN (0,1)),
+  confirmed_date           TEXT,
+  notes                    TEXT,
+  checked_at               DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(support_plan_check_id, evidence_template_def_id)
+);
+
+CREATE VIEW IF NOT EXISTS support_plan_with_risk AS
+SELECT
+  fw.id AS foreign_worker_id,
+  (SELECT COUNT(*) FROM support_plan_items) AS total_items,
+  (
+    SELECT COUNT(*) FROM support_plan_checks spc
+    WHERE spc.foreign_worker_id = fw.id AND spc.status IN ('completed', 'not_applicable')
+  ) AS completed_count,
+  (
+    -- 必須の根拠書類のうち、未確認（行が一度も作成されていない場合を含む）の件数
+    SELECT COUNT(*)
+    FROM support_plan_checks spc
+    JOIN support_evidence_template_definitions setd ON setd.support_plan_item_id = spc.support_plan_item_id
+    LEFT JOIN support_evidence_checks sec ON sec.support_plan_check_id = spc.id AND sec.evidence_template_def_id = setd.id
+    WHERE spc.foreign_worker_id = fw.id AND setd.is_required = 1
+      AND (sec.is_confirmed IS NULL OR sec.is_confirmed = 0)
+  ) AS missing_evidence_count,
+  CASE
+    WHEN (
+      SELECT COUNT(*) FROM support_plan_checks spc
+      WHERE spc.foreign_worker_id = fw.id AND spc.status IN ('completed', 'not_applicable')
+    ) < (SELECT COUNT(*) FROM support_plan_items) THEN 'yellow'
+    WHEN EXISTS (
+      SELECT 1
+      FROM support_plan_checks spc
+      JOIN support_evidence_template_definitions setd ON setd.support_plan_item_id = spc.support_plan_item_id
+      LEFT JOIN support_evidence_checks sec ON sec.support_plan_check_id = spc.id AND sec.evidence_template_def_id = setd.id
+      WHERE spc.foreign_worker_id = fw.id AND setd.is_required = 1
+        AND (sec.is_confirmed IS NULL OR sec.is_confirmed = 0)
+    ) THEN 'yellow'
+    ELSE 'green'
+  END AS support_plan_risk_level
+FROM foreign_workers fw;
+
+-- ============================================================
+-- 特定技能外国人管理：定期報告
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS periodic_reports (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  report_type       TEXT NOT NULL CHECK(report_type IN (
+                      'acceptance_status','support_status','residence_activity','other'
+                    )),
+  foreign_worker_id INTEGER REFERENCES foreign_workers(id),
+  period_from       TEXT NOT NULL,
+  period_to         TEXT NOT NULL,
+  due_date          TEXT NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','submitted')),
+  submitted_date    TEXT,
+  content_json      TEXT,
+  notes             TEXT,
+  created_by        INTEGER REFERENCES users(id),
+  created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+);

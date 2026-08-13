@@ -132,4 +132,28 @@ export const api = {
   updateTaskStatus: (id, status) => request(`/tasks/${id}/status`, { method: 'PUT', body: { status } }),
   deleteTask:     (id)       => request(`/tasks/${id}`, { method: 'DELETE' }),
   addTaskComment: (id, comment) => request(`/tasks/${id}/comments`, { method: 'POST', body: { comment } }),
+
+  getSupportPlanItems: () => request('/support-plans/items'),
+  getWorkerSupportPlan: (workerId) => request(`/workers/${workerId}/support-plan`),
+  saveSupportPlanChecks: (workerId, checks) =>
+    request(`/workers/${workerId}/support-plan/checks`, { method: 'POST', body: { checks } }),
+  saveSupportEvidenceChecks: (workerId, checkId, checks) =>
+    request(`/workers/${workerId}/support-plan/checks/${checkId}/evidence-checks`, { method: 'POST', body: { checks } }),
+  uploadSupportEvidenceFile: (workerId, checkId, file, note = '') => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('category', 'support_evidence');
+    form.append('related_check_id', checkId);
+    if (note) form.append('note', note);
+    return fetch(`/api/workers/${workerId}/files`, { method: 'POST', body: form }).then(r => r.json());
+  },
+
+  getPeriodicReports: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/periodic-reports${qs ? `?${qs}` : ''}`);
+  },
+  getPeriodicReport:    (id)       => request(`/periodic-reports/${id}`),
+  createPeriodicReport: (data)     => request('/periodic-reports', { method: 'POST', body: data }),
+  updatePeriodicReport: (id, data) => request(`/periodic-reports/${id}`, { method: 'PUT', body: data }),
+  exportPeriodicReport: (id)       => request(`/periodic-reports/${id}/export`),
 };

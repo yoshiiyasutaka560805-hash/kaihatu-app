@@ -270,10 +270,10 @@ router.post('/:id/files', canEdit, upload.single('file'), (req, res) => {
   }
 
   const result = db.prepare(`
-    INSERT INTO worker_files (foreign_worker_id, category, original_name, stored_path, file_size_bytes, mime_type, note, uploaded_by)
-    VALUES (?,?,?,?,?,?,?,?)
+    INSERT INTO worker_files (foreign_worker_id, category, related_check_id, original_name, stored_path, file_size_bytes, mime_type, note, uploaded_by)
+    VALUES (?,?,?,?,?,?,?,?,?)
   `).run(
-    req.params.id, category, req.file.originalname, req.file.path,
+    req.params.id, category, req.body.related_check_id || null, req.file.originalname, req.file.path,
     req.file.size, req.file.mimetype, req.body.note || null, req.session.userId,
   );
 
@@ -305,6 +305,112 @@ router.delete('/:id/files/:fileId', canEdit, (req, res) => {
   db.prepare('DELETE FROM worker_files WHERE id = ?').run(req.params.fileId);
 
   recordAudit(req, { action: 'delete', entityType: 'worker_file', entityId: file.id });
+  res.json({ ok: true });
+});
+
+// ============================================================
+// 支援計画（法定10項目）
+// ============================================================
+
+// GET /api/workers/:id/support-plan
+router.get('/:id/support-plan', (req, res) => {
+  const db = getDb();
+  const worker = db.prepare('SELECT id FROM foreign_workers WHERE id = ?').get(req.params.id);
+  if (!worker) return res.status(404).json({ error: '従業員が見つかりません' });
+
+  const items = db.prepare(`
+    SELECT
+      spi.*,
+      spc.id AS check_id, spc.status, spc.implementation_date, spc.implementer_name, spc.notes AS check_notes
+    FROM support_plan_items spi
+    LEFT JOIN support_plan_checks spc ON spc.support_plan_item_id = spi.id AND spc.foreign_worker_id = ?
+    ORDER BY spi.sort_order
+  `).all(req.params.id);
+
+  for (const item of items) {
+    const evidenceTemplates = db.prepare(`
+      SELECT setd.*, sec.id AS evidence_check_id, sec.is_confirmed, sec.confirmed_date, sec.notes AS evidence_notes
+      FROM support_evidence_template_definitions setd
+      LEFT JOIN support_evidence_checks sec ON sec.evidence_template_def_id = setd.id
+        AND sec.support_plan_check_id = ?
+      WHERE setd.support_plan_item_id = ?
+      ORDER BY setd.sort_order
+    `).all(item.check_id || -1, item.id);
+
+    const files = item.check_id
+      ? db.prepare('SELECT id, original_name, file_size_bytes, uploaded_at FROM worker_files WHERE related_check_id = ?')
+          .all(item.check_id)
+      : [];
+
+    item.evidenceTemplates = evidenceTemplates;
+    item.files = files;
+  }
+
+  const risk = db.prepare('SELECT * FROM support_plan_with_risk WHERE foreign_worker_id = ?').get(req.params.id);
+
+  res.json({ items, risk });
+});
+
+// POST /api/workers/:id/support-plan/checks - 実施状況の一括保存（存在しなければ作成）
+router.post('/:id/support-plan/checks', canEdit, (req, res) => {
+  const db = getDb();
+  const { checks } = req.body; // [{ support_plan_item_id, status, implementation_date, implementer_name, notes }]
+  if (!Array.isArray(checks)) return res.status(400).json({ error: 'checks は配列が必要です' });
+
+  const upsert = db.prepare(`
+    INSERT INTO support_plan_checks (foreign_worker_id, support_plan_item_id, status, implementation_date, implementer_name, notes)
+    VALUES (?,?,?,?,?,?)
+    ON CONFLICT(foreign_worker_id, support_plan_item_id)
+    DO UPDATE SET status = excluded.status,
+                  implementation_date = excluded.implementation_date,
+                  implementer_name = excluded.implementer_name,
+                  notes = excluded.notes,
+                  checked_at = CURRENT_TIMESTAMP
+  `);
+
+  db.transaction(() => {
+    for (const c of checks) {
+      upsert.run(
+        req.params.id, c.support_plan_item_id, c.status || 'planned',
+        c.implementation_date || null, c.implementer_name || null, c.notes || null,
+      );
+    }
+  })();
+
+  recordAudit(req, { action: 'update', entityType: 'support_plan', entityId: Number(req.params.id) });
+  res.json({ ok: true });
+});
+
+// POST /api/workers/:id/support-plan/checks/:checkId/evidence-checks
+router.post('/:id/support-plan/checks/:checkId/evidence-checks', canEdit, (req, res) => {
+  const db = getDb();
+  const { checks } = req.body; // [{ evidence_template_def_id, is_confirmed, confirmed_date, notes }]
+  if (!Array.isArray(checks)) return res.status(400).json({ error: 'checks は配列が必要です' });
+
+  const check = db.prepare('SELECT id FROM support_plan_checks WHERE id = ? AND foreign_worker_id = ?')
+    .get(req.params.checkId, req.params.id);
+  if (!check) return res.status(404).json({ error: '支援実施記録が見つかりません' });
+
+  const upsert = db.prepare(`
+    INSERT INTO support_evidence_checks (support_plan_check_id, evidence_template_def_id, is_confirmed, confirmed_date, notes)
+    VALUES (?,?,?,?,?)
+    ON CONFLICT(support_plan_check_id, evidence_template_def_id)
+    DO UPDATE SET is_confirmed = excluded.is_confirmed,
+                  confirmed_date = excluded.confirmed_date,
+                  notes = excluded.notes,
+                  checked_at = CURRENT_TIMESTAMP
+  `);
+
+  db.transaction(() => {
+    for (const c of checks) {
+      upsert.run(
+        req.params.checkId, c.evidence_template_def_id,
+        c.is_confirmed ?? null, c.confirmed_date || null, c.notes || null,
+      );
+    }
+  })();
+
+  recordAudit(req, { action: 'update', entityType: 'support_plan_evidence', entityId: Number(req.params.checkId) });
   res.json({ ok: true });
 });
 

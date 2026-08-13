@@ -29,6 +29,8 @@ function seedAll(db) {
   const { seed: seedAssessments }  = require('./initial_assessments');
   const { seed: seedUsers }        = require('./users');
   const { seed: seedCaseDocs }     = require('./case_document_items');
+  const { seed: seedSupportPlanItems } = require('./support_plan_items');
+  const { seed: seedSupportEvidence }  = require('./support_evidence_template_definitions');
 
   db.transaction(() => {
     seedServiceTypes(db);
@@ -40,6 +42,8 @@ function seedAll(db) {
     seedAssessments(db);
     seedUsers(db);
     seedCaseDocs(db);
+    seedSupportPlanItems(db);
+    seedSupportEvidence(db);
   })();
 }
 

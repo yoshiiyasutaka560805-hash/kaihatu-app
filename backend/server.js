@@ -52,6 +52,8 @@ app.use('/api/workers',      require('./routes/workers'));
 app.use('/api/residence-alerts', require('./routes/residenceAlerts'));
 app.use('/api/residence-cases', require('./routes/residenceCases'));
 app.use('/api/tasks',        require('./routes/tasks'));
+app.use('/api/support-plans', require('./routes/supportPlans'));
+app.use('/api/periodic-reports', require('./routes/periodicReports'));
 
 // 適性検査ツール（静的配信）
 app.use('/aptitude-test', express.static(path.join(__dirname, '..', 'aptitude-test')));
