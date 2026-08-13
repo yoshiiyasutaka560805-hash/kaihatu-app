@@ -27,6 +27,7 @@ function seedAll(db) {
   const { seed: seedFacility }     = require('./facility_settings');
   const { seed: seedLawSources }   = require('./law_update_sources');
   const { seed: seedAssessments }  = require('./initial_assessments');
+  const { seed: seedUsers }        = require('./users');
 
   db.transaction(() => {
     seedServiceTypes(db);
@@ -36,6 +37,7 @@ function seedAll(db) {
     seedFacility(db);
     seedLawSources(db);
     seedAssessments(db);
+    seedUsers(db);
   })();
 }
 

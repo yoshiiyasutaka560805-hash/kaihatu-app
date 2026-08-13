@@ -221,6 +221,52 @@ CREATE TABLE IF NOT EXISTS law_update_alerts (
 );
 
 -- ============================================================
+-- 認証・ユーザー
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS users (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  username              TEXT NOT NULL UNIQUE,
+  display_name          TEXT NOT NULL,
+  email                 TEXT,
+  password_hash         TEXT NOT NULL,
+  role                  TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin','staff','viewer')),
+  is_active             INTEGER NOT NULL DEFAULT 1,
+  must_change_password  INTEGER NOT NULL DEFAULT 0,
+  failed_login_count    INTEGER NOT NULL DEFAULT 0,
+  locked_until          DATETIME,
+  last_login_at         DATETIME,
+  created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+  sid        TEXT PRIMARY KEY,
+  session    TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+
+-- ============================================================
+-- アクセス・変更監査ログ
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER REFERENCES users(id),
+  action      TEXT NOT NULL CHECK(action IN (
+                'view','create','update','delete','login','login_failed',
+                'logout','file_upload','file_download','export'
+              )),
+  entity_type TEXT NOT NULL,
+  entity_id   INTEGER,
+  before_json TEXT,
+  after_json  TEXT,
+  ip_address  TEXT,
+  user_agent  TEXT,
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
 -- 適性検査（論理思考力）結果
 -- ============================================================
 

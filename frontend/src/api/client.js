@@ -6,6 +6,12 @@ async function request(path, options = {}) {
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+    throw new Error('未ログインです');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || res.statusText);
@@ -14,6 +20,19 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  login:  (username, password) => request('/auth/login', { method: 'POST', body: { username, password } }),
+  logout: ()                   => request('/auth/logout', { method: 'POST' }),
+  getMe:  ()                   => request('/auth/me'),
+  changeMyPassword: (currentPassword, newPassword) =>
+    request('/auth/me/password', { method: 'PUT', body: { currentPassword, newPassword } }),
+
+  getUsers:            ()             => request('/users'),
+  createUser:          (data)         => request('/users', { method: 'POST', body: data }),
+  updateUser:          (id, data)     => request(`/users/${id}`, { method: 'PUT', body: data }),
+  resetUserPassword:   (id, newPassword) => request(`/users/${id}/reset-password`, { method: 'PUT', body: { new_password: newPassword } }),
+  deactivateUser:      (id)           => request(`/users/${id}/deactivate`, { method: 'PUT' }),
+  activateUser:        (id)           => request(`/users/${id}/activate`, { method: 'PUT' }),
+
   getDashboard:    ()          => request('/dashboard'),
   getAlerts:       ()          => request('/dashboard/alerts'),
   getServiceTypes: ()          => request('/service-types'),
