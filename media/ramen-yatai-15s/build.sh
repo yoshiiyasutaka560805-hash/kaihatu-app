@@ -74,9 +74,9 @@ photo_seg "$P_SELFIE" s5.mp4 100 t5.png "1.08-0.08*on/100"  0.55   # セルフ�
 [x2][3:v]xfade=transition=fade:duration=0.4:offset=7.9[x3];\
 [x3][4:v]xfade=transition=fade:duration=0.4:offset=11.6667[x4];\
 [x4]fade=t=out:st=14.25:d=0.75,format=yuv420p,fps=30[vout];\
-[6:a:0]aresample=48000,volume=0.50,afade=t=in:st=0:d=0.35,afade=t=out:st=2.55:d=0.45[amb1];\
-[7:a:0]aresample=48000,volume=0.50,afade=t=in:st=0:d=0.35,afade=t=out:st=3.05:d=0.45,adelay=4800|4800[amb2];\
-[5:a][amb1][amb2]amix=inputs=3:normalize=0:duration=first,alimiter=limit=0.94,afade=t=out:st=14.3:d=0.7,atrim=0:15,asetpts=N/SR/TB[aout]" \
+[6:a:0]aresample=48000,volume=0.35,afade=t=in:st=0:d=0.35,afade=t=out:st=2.55:d=0.45[amb1];\
+[7:a:0]aresample=48000,volume=0.35,afade=t=in:st=0:d=0.35,afade=t=out:st=3.05:d=0.45,adelay=4800|4800[amb2];\
+[5:a][amb1][amb2]amix=inputs=3:normalize=0:duration=first,loudnorm=I=-14:TP=-1.0:LRA=9:linear=true,afade=t=out:st=14.35:d=0.65,atrim=0:15,asetpts=N/SR/TB[aout]" \
  -map "[vout]" -map "[aout]" \
  -c:v libx264 -crf 19 -preset slow -profile:v high -level 4.1 -pix_fmt yuv420p -g 60 \
  -c:a aac -b:a 192k -ar 48000 -movflags +faststart -t 15 "$OUT"
