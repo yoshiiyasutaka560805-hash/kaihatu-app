@@ -8,3 +8,5 @@ data/uploads/*
 !data/uploads/.gitkeep
 frontend/dist/
 *.log
+__pycache__/
+*.pyc
