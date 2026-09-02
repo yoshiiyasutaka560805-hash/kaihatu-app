@@ -7,7 +7,10 @@ cd "$(dirname "$0")"
 FF="${FF:-ffmpeg}"
 BGM="${BGM:-bgm_odayaka.wav}"
 TOPIC="${TOPIC:-service}"
-OUT="$(TOPIC=$TOPIC python3 -c 'import os,topics;print(topics.get(os.environ["TOPIC"])["out"])')"
+cfg(){ TOPIC=$TOPIC python3 -c "import os,topics;t=topics.get(os.environ['TOPIC']);print($1)"; }
+OUT="$(cfg 't["out"]')"
+BG_SKY="$(cfg 't["bg"][0]')"   # タイトル・エンドカード用
+BG_AIR="$(cfg 't["bg"][1]')"   # 本文カット用
 
 assets(){
   python3 make_bgm.py
@@ -29,11 +32,11 @@ cut(){
 }
 
 reel(){
-  cut bg_sky.mp4  ov_title.png c1.mp4  90 0.30 fadein
-  cut bg_air.mp4 ov_step1.png c2.mp4 102 0.35
-  cut bg_air.mp4 ov_step2.png c3.mp4 102 0.35
-  cut bg_air.mp4 ov_step3.png c4.mp4  99 0.35
-  cut bg_sky.mp4  ov_end.png   c5.mp4 105 0.30
+  cut "$BG_SKY" ov_title.png c1.mp4  90 0.30 fadein
+  cut "$BG_AIR" ov_step1.png c2.mp4 102 0.35
+  cut "$BG_AIR" ov_step2.png c3.mp4 102 0.35
+  cut "$BG_AIR" ov_step3.png c4.mp4  99 0.35
+  cut "$BG_SKY" ov_end.png   c5.mp4 105 0.30
   "$FF" -y -hide_banner -loglevel error -i c1.mp4 -i c2.mp4 -i c3.mp4 -i c4.mp4 -i c5.mp4 -i "$BGM" \
    -filter_complex "\
 [0:v][1:v]xfade=transition=fade:duration=0.4:offset=2.6[x1];\

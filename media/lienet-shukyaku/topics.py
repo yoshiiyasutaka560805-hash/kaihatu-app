@@ -11,6 +11,8 @@
 """
 
 COMMON = {
+    # 背景ループ (タイトル・エンドカード用, 本文用)。make_bg.py が書き出す。
+    "bg":        ("bg_sky.mp4", "bg_air.mp4"),
     "brand":     "L I E N E T",
     "end_cta":   "プロフィールのリンクから",
     "end_label": "LINEで友だち追加",
@@ -45,6 +47,8 @@ TOPICS = {
         ],
         "end_head":  "聞きにくいことは",
         "end_head2": "私たちが確かめます",
+        # 背景はインドネシアの雰囲気（生成り地＋熱帯の光＋バティックの地紋）
+        "bg": ("bg_id_sky.mp4", "bg_id_air.mp4"),
         "hashtags": "#介護の悩み #夜勤明け #介護転職 #東京介護求人 #Lienet",
     },
 }
