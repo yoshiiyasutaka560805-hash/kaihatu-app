@@ -78,6 +78,24 @@ def step_card(i, t):
     centered(img, 720, note, 34, MUTED, sp=1)
     img.save(f"ov_step{i+1}.png"); print(f"ov_step{i+1}.png")
 
+def quote_card(i, t):
+    """名言カード。引用は改行位置を topics.py で決め打ちしている（自動折返しだと座りが悪い）"""
+    lines, who = t["quotes"][i]
+    img = Image.new("RGBA", (W, H), (0,0,0,0))
+    d = ImageDraw.Draw(img)
+    size = 58
+    while size > 38 and max(tw(d, l, f(size), 2) for l in lines) > 940:
+        size -= 2
+    lead = size + 32
+    y0 = 620 - len(lines)*lead/2
+    for k, l in enumerate(lines):
+        centered(img, y0 + k*lead, l, size, INK, sp=2, glow=True)
+    ry = y0 + len(lines)*lead + 30
+    rule(img, ry, w=96, h=7)
+    centered(img, ry + 40, f"— {who}", 36, MUTED, sp=4)
+    img.save(f"ov_quote{i+1}.png")
+    print(f"ov_quote{i+1}.png  {size}px  上端 y={y0:.0f}  下端 y={ry+76:.0f}")
+
 def qr_image():
     """QRを用意する。URLがあれば生成し、無ければ手持ちの画像、どちらも無ければNone。"""
     if LINE_URL:
@@ -127,6 +145,10 @@ def end_card(t):
 if __name__ == "__main__":
     print(f"テーマ: {TOPIC}  出力: {TEXTS['out']}.mp4")
     title_card(TEXTS)
-    for i in range(3):
-        step_card(i, TEXTS)
+    if "quotes" in TEXTS:
+        for i in range(len(TEXTS["quotes"])):
+            quote_card(i, TEXTS)
+    else:
+        for i in range(3):
+            step_card(i, TEXTS)
     end_card(TEXTS)

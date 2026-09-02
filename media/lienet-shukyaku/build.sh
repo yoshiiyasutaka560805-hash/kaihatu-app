@@ -32,22 +32,25 @@ cut(){
 }
 
 reel(){
-  cut "$BG_SKY" ov_title.png c1.mp4  90 0.30 fadein
-  cut "$BG_AIR" ov_step1.png c2.mp4 102 0.35
-  cut "$BG_AIR" ov_step2.png c3.mp4 102 0.35
-  cut "$BG_AIR" ov_step3.png c4.mp4  99 0.35
-  cut "$BG_SKY" ov_end.png   c5.mp4 105 0.30
-  "$FF" -y -hide_banner -loglevel error -i c1.mp4 -i c2.mp4 -i c3.mp4 -i c4.mp4 -i c5.mp4 -i "$BGM" \
-   -filter_complex "\
-[0:v][1:v]xfade=transition=fade:duration=0.4:offset=2.6[x1];\
-[x1][2:v]xfade=transition=fade:duration=0.4:offset=5.6[x2];\
-[x2][3:v]xfade=transition=fade:duration=0.4:offset=8.6[x3];\
-[x3][4:v]xfade=transition=fade:duration=0.4:offset=11.5[x4];\
-[x4]fade=t=out:st=14.3:d=0.7,format=yuv420p,fps=30[v];\
-[5:a]loudnorm=I=-14:TP=-1.0:LRA=9:linear=true,afade=t=out:st=14.35:d=0.65,atrim=0:15,asetpts=N/SR/TB[a]" \
+  local i=0 ins=() tmp=() bgf rows=() line kind ov nf st fi
+  # 行はまず配列に読む。ループ内で回す ffmpeg が標準入力を食ってしまうため、
+  # while read をパイプで回すと2件目以降が壊れる。
+  mapfile -t rows < <(TOPIC=$TOPIC python3 -c '
+import os, topics
+for c in topics.get(os.environ["TOPIC"])["cuts"]:
+    print("\t".join(str(x) for x in c))')
+  for line in "${rows[@]}"; do
+    IFS=$'\t' read -r kind ov nf st fi <<<"$line"
+    i=$((i+1))
+    case "$kind" in sky) bgf="$BG_SKY" ;; air) bgf="$BG_AIR" ;; *) echo "背景の指定が不正: $kind"; exit 1 ;; esac
+    cut "$bgf" "$ov" "cut_$i.mp4" "$nf" "$st" "$fi"
+    ins+=(-i "cut_$i.mp4"); tmp+=("cut_$i.mp4")
+  done
+  "$FF" -y -hide_banner -loglevel error "${ins[@]}" -i "$BGM" \
+   -filter_complex "$(TOPIC=$TOPIC python3 make_chain.py)" \
    -map "[v]" -map "[a]" -c:v libx264 -crf 19 -preset slow -profile:v high -level 4.1 \
    -pix_fmt yuv420p -g 60 -c:a aac -b:a 192k -ar 48000 -movflags +faststart -t 15 "$OUT.mp4"
-  rm -f c1.mp4 c2.mp4 c3.mp4 c4.mp4 c5.mp4
+  rm -f "${tmp[@]}"
   echo "$OUT.mp4"
 }
 

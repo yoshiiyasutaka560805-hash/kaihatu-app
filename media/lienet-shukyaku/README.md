@@ -118,6 +118,11 @@ TOPIC=staffing python3 make_reel_overlays.py && TOPIC=staffing ./build.sh reel
 |---|---|---|---|
 | `service` | サービス紹介「一人で探さない。」 | 水色・ミント | `lienet_reel_15s.mp4` |
 | `staffing` | 人手不足の見極め方（統計1位 49.9%） | インドネシア（バティック） | `lienet_reel_staffing.mp4` |
+| `meigen` | 名言2つ（4カット構成） | インドネシア（バティック） | `lienet_reel_meigen.mp4` |
+
+カット構成も `topics.py` の `"cuts"` で決める。カット数はテーマごとに変えられ、
+`make_chain.py` が xfade の連鎖を組んで**15.000秒にならない構成は書き出す前に止める**。
+名言テーマは4カットにして1枚4.4秒とっている（3つ入れると読み切れない）。
 
 背景は `topics.py` の `"bg"` で選ぶ（タイトル用, 本文用 の順）。
 `make_bg.py` が4種類書き出す。`bg_id_*` は生成りの地に熱帯の光を置き、
