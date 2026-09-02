@@ -77,6 +77,23 @@ BGM=bgm_akarui.wav ./build.sh reel     # → reel.mp4（15.000秒）
 Windowsで動かす場合は ffmpeg のパスを `FF` で渡す:
 `FF=C:\ffmpeg\bin\ffmpeg.exe ./build.sh reel`
 
+## Canvaのテンプレート（静止画）
+
+フィード投稿用（1080×1350）のテンプレートを3点、Canvaの
+「新生福祉会 採用・広報」フォルダに作成済み。写真の差し替えと文言の書き換えだけで再利用できる。
+
+| デザイン | 内容 | 編集リンク |
+|---|---|---|
+| 介護職員 募集バナー | 職種・勤務地・勤務時間・給与の4項目＋CTA | https://www.canva.com/d/ylEf7k5wacyg2R3 |
+| 介護のお仕事 Q&A | 5ページのカルーセル（表紙／Q1-Q3／締め） | https://www.canva.com/d/HaR5JizUPyXAqAe |
+| 数字で見る職場 | 4つの数値タイル＋CTA | https://www.canva.com/d/HCKUfz9P0BPMmM1 |
+
+フォルダ: https://www.canva.com/folder/FAHUBaE77LQ
+
+> **⚠️ 数字と条件はすべて「◯」のプレースホルダのままです。** 給与・勤務時間・勤務地、
+> 平均勤続年数・有給取得率・未経験入職の割合・職員数、Q&Aの回答は、実際の値に
+> 置き換えてから投稿してください。求人広告になるため、事実と異なる記載は問題になります。
+
 ## 前のキットとの関係
 
 ラーメン屋台の15秒リール（`../ramen-yatai-15s/`）と作りは同じ。
