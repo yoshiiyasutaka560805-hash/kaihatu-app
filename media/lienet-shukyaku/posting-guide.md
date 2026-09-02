@@ -21,14 +21,26 @@
 このリポジトリは**公開設定**なので、ログインなしで直接ダウンロードできます。
 スマホのブラウザで開けばそのまま端末に保存できます。
 
-| 素材 | リンク |
+**まとめてほしい場合は `make_pack.py` で1つのzipにできます。**
+投稿順のフォルダに素材と `投稿文.txt` を入れた形で出るので、PCならこちらが早いです。
+
+```
+python3 make_pack.py lienet-instagram-pack.zip
+```
+
+個別に落とす場合は以下から。**スマホのブラウザで開けばそのまま端末に保存できます。**
+
+| 投稿 | ファイル |
 |---|---|
-| ① サービス紹介リール | [lienet_reel_15s.mp4](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/lienet_reel_15s.mp4) |
-| ② 人手不足リール | [lienet_reel_staffing.mp4](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/lienet_reel_staffing.mp4) |
-| ①のカバー画像 | [cover_service.jpg](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/cover_service.jpg) |
-| ②のカバー画像 | [cover_staffing.jpg](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/cover_staffing.jpg) |
-| LINEのQR | [qr_line.png](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/qr_line.png) |
-| 投稿文 | [captions.md](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/blob/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/captions.md) |
+| ① サービス紹介リール | [15s.mp4](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/lienet_reel_15s.mp4) ／ [cover_service.jpg](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/cover_service.jpg) |
+| ③ サービス紹介カルーセル | [service_01](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_service_01.png) ／ [service_02](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_service_02.png) ／ [service_03](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_service_03.png) ／ [service_04](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_service_04.png) ／ [service_05](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_service_05.png) |
+| ② 人手不足リール | [staffing.mp4](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/lienet_reel_staffing.mp4) ／ [cover_staffing.jpg](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/cover_staffing.jpg) |
+| ④ 名言リール | [meigen.mp4](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/lienet_reel_meigen.mp4) ／ [cover_meigen.jpg](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/cover_meigen.jpg) |
+| ⑤ 落ち込んだ日カルーセル | [ochikomi_01](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ochikomi_01.png) ／ [ochikomi_02](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ochikomi_02.png) ／ [ochikomi_03](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ochikomi_03.png) ／ [ochikomi_04](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ochikomi_04.png) ／ [ochikomi_05](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ochikomi_05.png) ／ [ochikomi_06](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ochikomi_06.png) |
+| ⑦ 職場の雰囲気リール | [kankei.mp4](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/lienet_reel_kankei.mp4) ／ [cover_kankei.jpg](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/cover_kankei.jpg) |
+| ⑥ 人間関係カルーセル | [ningen_01](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ningen_01.png) ／ [ningen_02](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ningen_02.png) ／ [ningen_03](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ningen_03.png) ／ [ningen_04](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ningen_04.png) ／ [ningen_05](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ningen_05.png) ／ [ningen_06](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ningen_06.png) ／ [ningen_07](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ningen_07.png) ／ [ningen_08](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ningen_08.png) ／ [ningen_09](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/raw/refs/heads/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/carousel_ningen_09.png) |
+
+投稿文の全文は [captions.md](https://github.com/yoshiiyasutaka560805-hash/kaihatu-app/blob/claude/15sec-video-creation-f02oz6/media/lienet-shukyaku/captions.md) にあります。
 
 > 公開リポジトリなので、置いてあるもの（住所・許可番号・LINEのURL）はすべて誰でも見られます。
 > いずれも公開情報なので問題はありませんが、非公開にしたい素材はここに置かないでください。
