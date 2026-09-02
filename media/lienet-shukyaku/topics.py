@@ -3,6 +3,8 @@
 テーマの並びは、介護労働安定センター「令和5年度介護労働実態調査」で
 各テーマに紐づく数値が大きい順。詳細は hashtags.md を参照。
 
+投稿文（キャプション）は captions.md が正。hashtags はそこから写したもの。
+
 新しいテーマを足すときは、このファイルに1ブロック追加して
   TOPIC=<キー> python3 make_reel_overlays.py && TOPIC=<キー> ./build.sh reel
 で書き出す。
@@ -43,7 +45,7 @@ TOPICS = {
         ],
         "end_head":  "聞きにくいことは",
         "end_head2": "私たちが確かめます",
-        "hashtags": "#介護の悩み #介護転職 #転職したい #東京介護求人 #Lienet",
+        "hashtags": "#介護の悩み #夜勤明け #介護転職 #東京介護求人 #Lienet",
     },
 }
 

@@ -119,9 +119,15 @@ TOPIC=staffing python3 make_reel_overlays.py && TOPIC=staffing ./build.sh reel
 | `service` | サービス紹介「一人で探さない。」 | `lienet_reel_15s.mp4` |
 | `staffing` | 人手不足の見極め方（統計1位 49.9%） | `lienet_reel_staffing.mp4` |
 
+## 投稿文
+
+`captions.md` に3投稿ぶんの本文（コピーして貼れる形）と、投稿の順番。
+**1行目に検索語を置くこと。** ハッシュタグが5個に減った分、拾われる入口が本文の冒頭に移っている。
+
 ## ハッシュタグ
 
-`hashtags.md` に投稿別の5個セットと選定方法。
+`hashtags.md` に選定方法と、使わない語／使う語の判断。
+実際に付ける5個セットは `captions.md` の各投稿文の末尾が正。
 **2025年12月18日からハッシュタグは1投稿5個までに変わっている**ので、旧来の30個並べる方式は使えない。
 
 ## 投稿前に確認すること
