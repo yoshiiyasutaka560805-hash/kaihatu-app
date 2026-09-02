@@ -129,6 +129,25 @@ TOPIC=staffing python3 make_reel_overlays.py && TOPIC=staffing ./build.sh reel
 バティックのカウン（輪の格子）とパラン（斜めの縞）を薄く流したもの。
 1周でちょうど1セルぶんずれるので継ぎ目なくループする。
 
+## 名言カルーセル
+
+```
+CAROUSEL=ochikomi LINE_URL="https://line.me/R/ti/p/@724ricln" ./build.sh carousel
+CAROUSEL=ningen   LINE_URL="https://line.me/R/ti/p/@724ricln" ./build.sh carousel
+```
+
+文言は `carousels.py`。1080×1350（4:5）のPNGを書き出す。
+背景はリール用の `bg_id_*.mp4` の1コマを中央で4:5に切り出して使うので、
+**先に `./build.sh assets` で背景を作っておく必要がある**（等倍で切るだけなので拡大は起きない）。
+
+| キー | テーマ | ページ |
+|---|---|---|
+| `ochikomi` | 落ち込んだ日に読み返したい言葉（4つ） | 6 |
+| `ningen` | 人にモヤモヤした日に読みたい言葉（7つ） | 9 |
+
+各ページは 引用 → 発言者 → **添え書き1行**。添え書きで言葉の向きを自社の主張に揃えている。
+理由は `captions.md` の「リールで外した4つをカルーセルには入れた理由」を参照。
+
 ## 投稿するとき
 
 `posting-guide.md` に、素材のダウンロードから投稿・投稿後に見る数字までの手順。

@@ -5,8 +5,9 @@
 文字はすべて Instagram リールの安全域（上250 / 下420 / 左右60px の内側）に収める。
 """
 import os
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
-from palette import PAPER, SKYL, SKY, MINT, CORAL, INK, MUTED
+from PIL import Image, ImageDraw
+from palette import SKYL, SKY, MINT, INK, MUTED
+from textkit import f, tw, draw_sp, centered, pill, rule
 import topics
 
 # LINEのQRの入れ方（どちらか）
@@ -18,42 +19,10 @@ QR_FILE   = "qr_line.png"
 QR_SIZE   = 420          # スマホで読み取れる大きさ
 
 W, H = 1080, 1920
-FONT = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"
 SAFE_BOTTOM = H - 420          # 1500
 
 TOPIC = os.environ.get("TOPIC", "service")
 TEXTS = topics.get(TOPIC)
-
-def f(sz): return ImageFont.truetype(FONT, sz)
-
-def tw(d, s, font, sp=0):
-    return sum(d.textlength(c, font=font) for c in s) + sp*(len(s)-1)
-
-def draw_sp(d, x, y, s, font, fill, sp=0):
-    for c in s:
-        d.text((x, y), c, font=font, fill=fill)
-        x += d.textlength(c, font=font) + sp
-
-def centered(img, y, s, size, fill, sp=4, glow=False):
-    """明るい背景なので、影ではなく白い抜きで文字を浮かせる"""
-    d = ImageDraw.Draw(img)
-    font = f(size)
-    x = (W - tw(d, s, font, sp))/2
-    if glow:
-        gl = Image.new("RGBA", (W, H), (0,0,0,0))
-        draw_sp(ImageDraw.Draw(gl), x, y, s, font, (255,255,255,235), sp)
-        img.alpha_composite(gl.filter(ImageFilter.GaussianBlur(12)))
-        img.alpha_composite(gl.filter(ImageFilter.GaussianBlur(4)))
-        d = ImageDraw.Draw(img)
-    draw_sp(d, x, y, s, font, tuple(fill)+(255,), sp)
-
-def pill(img, y, h, w, color, radius=None):
-    ImageDraw.Draw(img).rounded_rectangle(
-        [(W-w)/2, y, (W+w)/2, y+h], radius=radius or h//2, fill=tuple(color)+(255,))
-
-def rule(img, y, w=132, h=9, color=MINT):
-    ImageDraw.Draw(img).rounded_rectangle(
-        [(W-w)/2, y, (W+w)/2, y+h], radius=h//2, fill=tuple(color)+(255,))
 
 def title_card(t):
     img = Image.new("RGBA", (W, H), (0,0,0,0))

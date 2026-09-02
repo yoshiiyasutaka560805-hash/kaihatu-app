@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 株式会社Lienet（有料職業紹介）求職者向け 15秒リールのビルド
 #   ./build.sh assets  … BGM・背景ループ・テロップを作り直す
-#   ./build.sh reel    … リールを組む（lienet_reel_15s.mp4）
+#   ./build.sh reel    … リールを組む（TOPIC= でテーマを選ぶ）
+#   ./build.sh carousel … 名言カルーセルのPNGを書き出す（CAROUSEL= で選ぶ）
 set -euo pipefail
 cd "$(dirname "$0")"
 FF="${FF:-ffmpeg}"
@@ -57,5 +58,6 @@ for c in topics.get(os.environ["TOPIC"])["cuts"]:
 case "${1:-reel}" in
   assets) assets ;;
   reel)   reel ;;
-  *) echo "使い方: ./build.sh [assets|reel]"; exit 1 ;;
+  carousel) CAROUSEL="${CAROUSEL:-ochikomi}" FF="$FF" python3 make_carousel.py ;;
+  *) echo "使い方: ./build.sh [assets|reel|carousel]"; exit 1 ;;
 esac
