@@ -24,8 +24,9 @@ C = carousels.get(NAME)
 N = len(C["pages"]) + 2   # 表紙 + 引用 + 最終ページ
 
 def bg(kind, t):
-    """背景動画の1コマを 1080×1350 に切り出す"""
-    src = "bg_id_sky.mp4" if kind == "sky" else "bg_id_air.mp4"
+    """背景動画の1コマを 1080×1350 に切り出す（等倍で切るだけ）"""
+    fam = C.get("bg", "id")
+    src = f"bg_id_{kind}.mp4" if fam == "id" else f"bg_{kind}.mp4"
     out = f".bgtmp_{kind}_{t}.png"
     subprocess.run([FF, "-y", "-v", "error", "-ss", str(t), "-i", src,
                     "-frames:v", "1", "-vf", "crop=1080:1350:0:285", out], check=True)
@@ -82,6 +83,26 @@ def quote(i):
     footer(img, i+1)
     return img
 
+def bullets(i):
+    """お悩み・できること などの箇条書きページ"""
+    head, items = C["pages"][i]
+    img = bg("air", 0.5 + i*1.1)
+    d = ImageDraw.Draw(img)
+    hs = fit(d, [head], 52, 36, LIMIT, sp=2)
+    centered(img, 230, head, hs, INK, sp=2, glow=True)
+    rule(img, 230+hs+40, w=96, h=7)
+
+    y = 230 + hs + 110
+    for lines in items:
+        bh = 46*len(lines) + 60
+        d.rounded_rectangle([90, y, W-90, y+bh], radius=28, fill=(255,255,255,225))
+        ImageDraw.Draw(img).ellipse([140, y+bh/2-11, 162, y+bh/2+11], fill=tuple(MINT)+(255,))
+        for k, l in enumerate(lines):
+            centered(img, y + 30 + k*46, l, 36, INK, sp=1)
+        y += bh + 26
+    footer(img, i+1)
+    return img
+
 def qr_image():
     if LINE_URL:
         import qrcode
@@ -123,7 +144,8 @@ def end():
 
 if __name__ == "__main__":
     print(f"カルーセル: {NAME}  {N}ページ")
-    pages = [cover()] + [quote(i) for i in range(len(C["pages"]))] + [end()]
+    page = quote if C.get("style", "quote") == "quote" else bullets
+    pages = [cover()] + [page(i) for i in range(len(C["pages"]))] + [end()]
     for i, img in enumerate(pages, 1):
         name = f"{C['out']}_{i:02d}.png"
         img.convert("RGB").save(name)
