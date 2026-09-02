@@ -7,6 +7,7 @@
 import os
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from palette import PAPER, SKYL, SKY, MINT, CORAL, INK, MUTED
+import topics
 
 # LINEのQRの入れ方（どちらか）
 #   LINE_URL=https://lin.ee/xxxxxxx python3 make_reel_overlays.py   … URLからQRを生成する（推奨・最も鮮明）
@@ -20,21 +21,8 @@ W, H = 1080, 1920
 FONT = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"
 SAFE_BOTTOM = H - 420          # 1500
 
-TEXTS = {
-    "title1": "介護のお仕事、",
-    "title2": "一人で探さない。",
-    "brand":  "L I E N E T",
-    "steps": [
-        ("STEP 1", "希望の条件を聞かせてください", "勤務地・勤務時間・給与、なんでも"),
-        ("STEP 2", "条件に合う職場をお探しします", "求人票では分からないこともお伝えします"),
-        ("STEP 3", "ご相談・ご紹介は無料です",   "求職者の方から手数料はいただきません"),
-    ],
-    "end_head":  "まずはお気軽に",
-    "end_head2": "ご相談ください",
-    "end_cta":   "プロフィールのリンクから",
-    "end_label": "LINEで友だち追加",
-    "licence":   "株式会社Lienet ／ 有料職業紹介事業許可 13-ユ-318908",
-}
+TOPIC = os.environ.get("TOPIC", "service")
+TEXTS = topics.get(TOPIC)
 
 def f(sz): return ImageFont.truetype(FONT, sz)
 
@@ -137,6 +125,7 @@ def end_card(t):
     img.save("ov_end.png"); print("ov_end.png  カード下端 y=", CY+CH, " 最下端 y=", 1322+31)
 
 if __name__ == "__main__":
+    print(f"テーマ: {TOPIC}  出力: {TEXTS['out']}.mp4")
     title_card(TEXTS)
     for i in range(3):
         step_card(i, TEXTS)

@@ -6,12 +6,14 @@ set -euo pipefail
 cd "$(dirname "$0")"
 FF="${FF:-ffmpeg}"
 BGM="${BGM:-bgm_odayaka.wav}"
+TOPIC="${TOPIC:-service}"
+OUT="$(TOPIC=$TOPIC python3 -c 'import os,topics;print(topics.get(os.environ["TOPIC"])["out"])')"
 
 assets(){
   python3 make_bgm.py
   python3 make_se.py
   FF="$FF" python3 make_bg.py
-  python3 make_reel_overlays.py
+  TOPIC="$TOPIC" python3 make_reel_overlays.py
 }
 
 # $1=背景mp4 $2=テロップpng $3=出力 $4=フレーム数 $5=テロップ表示開始秒 $6=先頭を黒からフェードするか
@@ -41,9 +43,9 @@ reel(){
 [x4]fade=t=out:st=14.3:d=0.7,format=yuv420p,fps=30[v];\
 [5:a]loudnorm=I=-14:TP=-1.0:LRA=9:linear=true,afade=t=out:st=14.35:d=0.65,atrim=0:15,asetpts=N/SR/TB[a]" \
    -map "[v]" -map "[a]" -c:v libx264 -crf 19 -preset slow -profile:v high -level 4.1 \
-   -pix_fmt yuv420p -g 60 -c:a aac -b:a 192k -ar 48000 -movflags +faststart -t 15 lienet_reel_15s.mp4
+   -pix_fmt yuv420p -g 60 -c:a aac -b:a 192k -ar 48000 -movflags +faststart -t 15 "$OUT.mp4"
   rm -f c1.mp4 c2.mp4 c3.mp4 c4.mp4 c5.mp4
-  echo "lienet_reel_15s.mp4"
+  echo "$OUT.mp4"
 }
 
 case "${1:-reel}" in

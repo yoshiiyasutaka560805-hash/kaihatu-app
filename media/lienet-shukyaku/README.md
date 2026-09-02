@@ -105,6 +105,20 @@ CanvaへのアップロードはURL経由しか手段がないため、QR画像�
 
 QRの下にコーラルの「LINEで友だち追加」ボタンが入っている。
 
+## 投稿テーマの優先順位
+
+`topic-priority.md` に、介護労働実態調査にもとづくテーマの順位。
+テーマごとの文言は `topics.py` にまとめてあり、次のように書き出す。
+
+```bash
+TOPIC=staffing python3 make_reel_overlays.py && TOPIC=staffing ./build.sh reel
+```
+
+| キー | テーマ | 出力 |
+|---|---|---|
+| `service` | サービス紹介「一人で探さない。」 | `lienet_reel_15s.mp4` |
+| `staffing` | 人手不足の見極め方（統計1位 49.9%） | `lienet_reel_staffing.mp4` |
+
 ## ハッシュタグ
 
 `hashtags.md` に投稿別の5個セットと選定方法。
