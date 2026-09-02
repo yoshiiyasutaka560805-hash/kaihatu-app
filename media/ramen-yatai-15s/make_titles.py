@@ -2,8 +2,15 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import os
 W, H = 1080, 1920
 FONT = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"
-OUT = "."
+OUT = "/tmp/claude-0/-home-user-kaihatu-app/1bdcfed4-2b4b-5084-8d9d-d3fbf03afb58/scratchpad"
 ACCENT = (226, 64, 43)
+
+# Instagram リールのUI安全域 (この外側はUIに隠れる前提で使わない)
+#   上 250px : ヘッダ / 下 420px : 投稿文・ユーザー名・音源
+#   左右 60px、さらに下部右 180px : いいね等のボタン列
+UI_TOP, UI_BOTTOM, UI_SIDE, UI_RIGHT = 250, 420, 60, 180
+SAFE_BOTTOM = H - UI_BOTTOM          # = 1500
+CAPTION_Y   = SAFE_BOTTOM - 215      # 本文の基準位置 (サブ込みで安全域に収まる)
 
 def f(sz): return ImageFont.truetype(FONT, sz)
 
@@ -36,10 +43,10 @@ def caption(name, text, sub=None, size=68, y=None, center=False, sp=6):
     if center:
         scrim(img, 0, H, alpha=90, top_alpha=90)
     else:
-        scrim(img, int(H*0.62), H, alpha=175, top_alpha=0)
+        scrim(img, int(H*0.50), H, alpha=175, top_alpha=0)
     d = ImageDraw.Draw(img)
     font = f(size)
-    y = y if y is not None else int(H*0.735)
+    y = y if y is not None else CAPTION_Y
     width = tw(d, text, font, sp)
     x = (W - width)/2
     # accent bar above the caption
@@ -64,8 +71,8 @@ def caption(name, text, sub=None, size=68, y=None, center=False, sp=6):
     img.save(os.path.join(OUT, name))
     print("wrote", name)
 
-caption("t1.png", "今夜は屋台のラーメン", sub="R A M E N   Y A T A I", size=70, y=int(H*0.70))
+caption("t1.png", "今夜は屋台のラーメン", sub="R A M E N   Y A T A I", size=70, y=CAPTION_Y-60)
 caption("t2.png", "赤提灯に誘われて", size=68)
 caption("t3.png", "一杯ずつ、丁寧に", size=68)
 caption("t4.png", "澄んだ醤油スープ", size=70)
-caption("t5.png", "ごちそうさまでした", sub="T H A N K   Y O U", size=74, y=int(H*0.745))
+caption("t5.png", "ごちそうさまでした", sub="T H A N K   Y O U", size=74, y=CAPTION_Y-30)
