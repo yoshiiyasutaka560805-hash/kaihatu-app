@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# リアネット（有料職業紹介）求職者向け 15秒リールのビルド
+# 株式会社Lienet（有料職業紹介）求職者向け 15秒リールのビルド
 #   ./build.sh assets  … BGM・背景ループ・テロップを作り直す
-#   ./build.sh reel    … リールを組む（rianet_reel_15s.mp4）
+#   ./build.sh reel    … リールを組む（lienet_reel_15s.mp4）
 set -euo pipefail
 cd "$(dirname "$0")"
 FF="${FF:-ffmpeg}"
@@ -27,11 +27,11 @@ cut(){
 }
 
 reel(){
-  cut bg_deep.mp4  ov_title.png c1.mp4  90 0.30 fadein
-  cut bg_light.mp4 ov_step1.png c2.mp4 102 0.35
-  cut bg_light.mp4 ov_step2.png c3.mp4 102 0.35
-  cut bg_light.mp4 ov_step3.png c4.mp4  99 0.35
-  cut bg_deep.mp4  ov_end.png   c5.mp4 105 0.30
+  cut bg_sky.mp4  ov_title.png c1.mp4  90 0.30 fadein
+  cut bg_air.mp4 ov_step1.png c2.mp4 102 0.35
+  cut bg_air.mp4 ov_step2.png c3.mp4 102 0.35
+  cut bg_air.mp4 ov_step3.png c4.mp4  99 0.35
+  cut bg_sky.mp4  ov_end.png   c5.mp4 105 0.30
   "$FF" -y -hide_banner -loglevel error -i c1.mp4 -i c2.mp4 -i c3.mp4 -i c4.mp4 -i c5.mp4 -i "$BGM" \
    -filter_complex "\
 [0:v][1:v]xfade=transition=fade:duration=0.4:offset=2.6[x1];\
@@ -41,9 +41,9 @@ reel(){
 [x4]fade=t=out:st=14.3:d=0.7,format=yuv420p,fps=30[v];\
 [5:a]loudnorm=I=-14:TP=-1.0:LRA=9:linear=true,afade=t=out:st=14.35:d=0.65,atrim=0:15,asetpts=N/SR/TB[a]" \
    -map "[v]" -map "[a]" -c:v libx264 -crf 19 -preset slow -profile:v high -level 4.1 \
-   -pix_fmt yuv420p -g 60 -c:a aac -b:a 192k -ar 48000 -movflags +faststart -t 15 rianet_reel_15s.mp4
+   -pix_fmt yuv420p -g 60 -c:a aac -b:a 192k -ar 48000 -movflags +faststart -t 15 lienet_reel_15s.mp4
   rm -f c1.mp4 c2.mp4 c3.mp4 c4.mp4 c5.mp4
-  echo "rianet_reel_15s.mp4"
+  echo "lienet_reel_15s.mp4"
 }
 
 case "${1:-reel}" in
