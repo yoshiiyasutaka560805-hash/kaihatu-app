@@ -119,6 +119,11 @@ TOPIC=staffing python3 make_reel_overlays.py && TOPIC=staffing ./build.sh reel
 | `service` | サービス紹介「一人で探さない。」 | `lienet_reel_15s.mp4` |
 | `staffing` | 人手不足の見極め方（統計1位 49.9%） | `lienet_reel_staffing.mp4` |
 
+## 投稿するとき
+
+`posting-guide.md` に、素材のダウンロードから投稿・投稿後に見る数字までの手順。
+**プロフィールのリンク設定を先に済ませること。** 3投稿すべてが「プロフィールのリンクから」で終わる。
+
 ## 投稿文
 
 `captions.md` に3投稿ぶんの本文（コピーして貼れる形）と、投稿の順番。
