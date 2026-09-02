@@ -47,14 +47,16 @@ Instagram投稿の素材。人材紹介らしい「さわやかさ・抜け感�
 
 ## Canvaのテンプレート（静止画）
 
-フィード投稿用（1080×1350）。Canvaの「リアネット 求職者向け集客」フォルダに作成済み。
+フィード投稿用（1080×1350）。Canvaの「Lienet 求職者向け集客」フォルダに作成済み。
 
 | デザイン | 内容 | 編集リンク |
 |---|---|---|
 | 求職者向けバナー | 介護のお仕事、／一人で探さない。＋無料相談CTA | https://www.canva.com/d/WAlOGYIR6-SU5gn |
 | 求職者向けカルーセル | 5ページ（表紙／お悩み／できること／料金／締め） | https://www.canva.com/d/feINl_bn9hAlp18 |
 
-フォルダ: https://www.canva.com/folder/FAHUBoh0GFc
+デザイン名も「Lienet 求職者向けバナー」「リアネット 求職者向けカルーセル」→ Lienet 表記に統一済み。
+
+フォルダ: https://www.canva.com/folder/FAHUB7kXHyY
 
 カルーセルの構成:
 
