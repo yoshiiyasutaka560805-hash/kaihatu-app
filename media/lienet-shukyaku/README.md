@@ -43,6 +43,24 @@ Instagram投稿の素材。人材紹介らしい「さわやかさ・抜け感�
 ./build.sh reel     # リールを組む
 ```
 
+### LINEのQRを入れる
+
+エンドカードにLINEのQRを入れる枠を用意してある。入れ方は2通り。
+
+```bash
+# 推奨: LINEのURLからQRを生成する（一番鮮明で、読み取りやすい）
+LINE_URL=https://lin.ee/xxxxxxx python3 make_reel_overlays.py && ./build.sh reel
+
+# または: 用意済みのQR画像を qr_line.png としてこのフォルダに置いてから
+python3 make_reel_overlays.py && ./build.sh reel
+```
+
+QRは420×420pxで配置される。どちらも設定していない場合は、貼る位置を示す枠だけが描かれる
+（現在の `lienet_reel_15s.mp4` はQRを入れる前の、コーラルのボタンで終わる版）。
+
+**QRはスクリーンショットから描き起こさないこと。** QRは正確なビットの並びなので、
+画像を目で見て再現すると別のURLになったり読み取れなくなる。必ず元のURLか元画像を使う。
+
 文言は `make_reel_overlays.py` の `TEXTS` を書き換える。
 
 ## Canvaのテンプレート（静止画）
