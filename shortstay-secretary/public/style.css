@@ -1,0 +1,19 @@
+:root{--bg:#f6f7f9;--fg:#1d2433;--card:#fff;--line:#dde1e8;--pri:#1f6feb;--warn:#b7791f;--urg:#c2410c;--over:#b91c1c;--ok:#15803d}
+@media (prefers-color-scheme:dark){:root{--bg:#12151b;--fg:#e6e9ef;--card:#1b2029;--line:#2c3340;--pri:#5b9dff;--warn:#e0a84a;--urg:#fb923c;--over:#f87171;--ok:#4ade80}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif;padding-bottom:72px}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+h1{font-size:1.05rem;margin:0;flex:1}h2{font-size:1.05rem;margin:20px 0 8px}
+main{max-width:860px;margin:0 auto;padding:12px 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:8px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1 1 140px}.row .fit{flex:0 0 auto}
+input,select,textarea,button{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);min-height:44px}
+button{background:var(--pri);color:#fff;border:0;cursor:pointer}button.sub{background:transparent;color:var(--pri);border:1px solid var(--pri)}button.danger{background:var(--over)}
+label{display:block;font-size:.85rem;margin-top:8px}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line)}
+nav button{flex:1;border-radius:0;background:transparent;color:var(--fg);min-height:56px}nav button.on{color:var(--pri);font-weight:700}
+.badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:.75rem;color:#fff}
+.b-warn{background:var(--warn)}.b-urgent{background:var(--urg)}.b-overdue{background:var(--over)}.b-missing{background:#6b7280}.b-ok{background:var(--ok)}
+.warn{color:var(--urg);font-size:.88rem}.muted{color:#6b7280;font-size:.85rem}
+table{width:100%;border-collapse:collapse;font-size:.88rem}td,th{padding:6px;border-bottom:1px solid var(--line);text-align:left}
+#toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:#111;color:#fff;padding:8px 16px;border-radius:8px;opacity:0;transition:.2s;pointer-events:none}#toast.on{opacity:1}
+.secret{filter:blur(6px)}.secret.show{filter:none}
