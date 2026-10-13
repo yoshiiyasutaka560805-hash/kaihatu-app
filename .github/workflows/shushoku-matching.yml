@@ -1,0 +1,43 @@
+name: shushoku-matching
+
+on:
+  push:
+    paths: ['shushoku-matching/**', '.github/workflows/shushoku-matching.yml']
+  pull_request:
+    paths: ['shushoku-matching/**', '.github/workflows/shushoku-matching.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shushoku-matching/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: shushoku-matching/backend/package-lock.json
+      - run: npm ci
+      - run: npm test   # Asia/Tokyo と UTC の両方で実行
+      - run: npm audit --omit=dev --audit-level=moderate
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shushoku-matching/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: shushoku-matching/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm audit --audit-level=moderate
