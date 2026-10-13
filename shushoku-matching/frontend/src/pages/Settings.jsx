@@ -339,9 +339,10 @@ export default function Settings() {
 
       {tab === 'match' && (
         <>
-          <Section title="マッチング" keys={['match_min_score', 'wage_tolerance_percent', 'tokutei_visiting_allowed']} {...common}>
+          <Section title="マッチング" keys={['match_min_score', 'verdict_high_score', 'wage_tolerance_percent', 'tokutei_visiting_allowed']} {...common}>
             <div className="grid2">
               <In id="s-minscore" label="候補表示の最低スコア" name="match_min_score" type="number" min={0} max={100} suffix="点" form={form} set={set} />
+              <In id="s-highscore" label="「案内可（マッチ度高）」とするスコア" name="verdict_high_score" type="number" min={0} max={100} suffix="点以上" form={form} set={set} />
               <In id="s-wagetol" label="賃金の許容差" name="wage_tolerance_percent" type="number" min={0} max={30} suffix="%" form={form} set={set} hint="希望賃金に対する不足がこの割合以内なら除外せず注意表示" />
             </div>
             <Check label="特定技能の在留資格で訪問系業務を「可」と判定する" name="tokutei_visiting_allowed" form={form} set={set} />
@@ -391,6 +392,34 @@ export default function Settings() {
               <label className="form-label" htmlFor="s-colmap">列名の対応付け（JSON）</label>
               <textarea id="s-colmap" className="form-textarea" rows={4} style={{ fontFamily: 'monospace' }} value={form.provision_column_map ?? ''} onChange={e => set('provision_column_map', e.target.value)} />
               <div className="muted">受領CSVの列名が既定と異なる場合 {'{"CSV列名":"posting_no"}'} の形で対応付け。不要なら {'{}'}。</div>
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {tab === 'provision' && (
+        <Section title="ハローワーク求人情報提供 Web API（自動取得）" keys={['hwapi_enabled', 'hwapi_token_url', 'hwapi_data_url', 'hwapi_logout_url', 'hwapi_data_ids', 'hwapi_token_tag', 'hwapi_record_tag', 'hwapi_field_map', 'hwapi_id_param', 'hwapi_pass_param', 'hwapi_prefectures', 'hwapi_interval_ms']} {...common}>
+          <div className="warn-box">
+            管轄労働局へ利用申請し、承認後に受け取る「API インタフェース仕様書」の内容に合わせて入力してください。
+            ID・パスワードは画面では保存せず、環境変数 HW_API_ID / HW_API_PASSWORD に設定します
+            （現在：{data.hwApiCredentials ? '設定済み' : '未設定'}）。取得は「取込スケジュール」の時刻に1日1回実行されます。
+          </div>
+          <Check label="Web APIによる自動取得を有効にする" name="hwapi_enabled" form={form} set={set} />
+          <div className="grid2">
+            <In id="s-hw-token" label="トークン取得URL" name="hwapi_token_url" form={form} set={set} placeholder="https://…" />
+            <In id="s-hw-data" label="データ取得URL" name="hwapi_data_url" form={form} set={set} hint="{dataId} {page} {token} が置き換わります" />
+            <In id="s-hw-logout" label="トークン破棄URL（任意）" name="hwapi_logout_url" form={form} set={set} />
+            <In id="s-hw-ids" label="データID（カンマ区切り）" name="hwapi_data_ids" form={form} set={set} hint="民間職業紹介事業者用のID（公共機関用と取り違えない）" />
+            <In id="s-hw-idp" label="ID のパラメータ名" name="hwapi_id_param" form={form} set={set} />
+            <In id="s-hw-pwp" label="パスワードのパラメータ名" name="hwapi_pass_param" form={form} set={set} />
+            <In id="s-hw-ttag" label="トークンのXMLタグ名" name="hwapi_token_tag" form={form} set={set} />
+            <In id="s-hw-rtag" label="求人1件のXMLタグ名" name="hwapi_record_tag" form={form} set={set} />
+            <In id="s-hw-pref" label="取り込む都道府県（カンマ区切り）" name="hwapi_prefectures" form={form} set={set} hint="空欄＝すべて。例：大阪府,兵庫県" />
+            <In id="s-hw-int" label="リクエスト間隔（ミリ秒）" name="hwapi_interval_ms" type="number" min={1000} form={form} set={set} />
+            <div className="form-group wide">
+              <label className="form-label" htmlFor="s-hw-map">項目の対応付け（JSON）</label>
+              <textarea id="s-hw-map" className="form-textarea" rows={6} style={{ fontFamily: 'monospace' }} value={form.hwapi_field_map ?? ''} onChange={e => set('hwapi_field_map', e.target.value)} />
+              <div className="muted">{'{"仕様書のXMLタグ名":"posting_no", …}'} の形。項目名は求人CSVと同じ（posting_no, company_name, prefecture, city, job_title, wage_min, expiry_date など）。複数タグの連結は "タグA+タグB"。</div>
             </div>
           </div>
         </Section>

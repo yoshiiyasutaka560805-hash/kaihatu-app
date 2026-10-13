@@ -7,6 +7,7 @@ const cron = require('node-cron');
 const { getSettings } = require('../database/db');
 const { deactivateExpired } = require('./postingStore');
 const provision = require('./sources/hwProvisionService');
+const hwApi = require('./sources/hwApi');
 const { rematchActiveSeekers } = require('./matching/runner');
 const { purgeExpired } = require('./retention');
 const { runBackup } = require('./backup');
@@ -14,12 +15,17 @@ const { withLock } = require('../utils/lock');
 const { runAs } = require('../middleware/context');
 
 let fetchTask = null;
+
+function logApiError(msg) {
+  require('../database/db').getDb().prepare(`INSERT INTO fetch_runs (source, finished_at, status, message) VALUES ('hw_api', datetime('now','localtime'), 'error', ?)`).run(msg);
+}
 let dailyTask = null;
 
 function runFetch() {
   return runAs('system', () => withLock('fetch', async () => {
     const results = {};
     try { results.provision = await provision.run(); } catch (e) { results.provision = { error: e.message }; }
+    try { results.hwApi = await hwApi.run(); } catch (e) { results.hwApi = { error: e.message }; logApiError(e.message); }
     results.deactivated = deactivateExpired();
     results.rematch = await rematchActiveSeekers();
     return results;

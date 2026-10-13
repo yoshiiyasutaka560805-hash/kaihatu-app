@@ -28,6 +28,19 @@ module.exports = {
   provision_dir: '',
   provision_column_map: '{}',            // 提供CSVの列名 → 項目名 の対応（JSON）
   provision_terms: 'ハローワーク求人情報オンライン提供：職業紹介以外の目的での利用・第三者提供・インターネット等での公開禁止',
+  // ハローワーク求人情報提供 Web API（承認後に仕様書に合わせて設定。認証情報は環境変数 HW_API_ID / HW_API_PASSWORD）
+  hwapi_enabled: '0',
+  hwapi_token_url: '',
+  hwapi_data_url: '',                    // 例: https://…/{dataId}/{page}（{dataId} {page} {token} を置換）
+  hwapi_logout_url: '',
+  hwapi_data_ids: '',                    // 民間職業紹介事業者用のデータID（カンマ区切り）
+  hwapi_token_tag: 'token',
+  hwapi_record_tag: '',                  // 求人1件を表すXMLタグ名
+  hwapi_field_map: '{}',                 // { "XMLタグ名": "posting_no" } 等。複数タグ連結は "A+B"
+  hwapi_id_param: 'id',
+  hwapi_pass_param: 'pass',
+  hwapi_prefectures: '',                 // 取り込む都道府県（カンマ区切り。空=すべて）
+  hwapi_interval_ms: '1000',
   crawler_enabled: '0',
   crawler_terms_confirmed: '0',
   crawler_base_url: '',

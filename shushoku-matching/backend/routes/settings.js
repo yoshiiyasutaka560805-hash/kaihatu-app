@@ -15,15 +15,15 @@ const specs = require('../models/specs');
 
 const NUMERIC = { match_min_score: [0, 100], verdict_high_score: [0, 100], wage_tolerance_percent: [0, 30], ai_top_n: [0, 10], ai_monthly_budget_usd: [0, 10000],
   fee_rate_percent: [0, 100], fee_cap_percent: [0, 100], fee_basis_months: [0, 24], invoice_due_days: [0, 365],
-  retention_years: [2, 20], seeker_validity_months: [1, 24], backup_keep: [1, 365] };
-const BOOL = ['ai_enabled', 'provision_enabled', 'tokutei_visiting_allowed'];
-const JSON_KEYS = { refund_policy: 'array', provision_column_map: 'object' };
+  retention_years: [2, 20], seeker_validity_months: [1, 24], backup_keep: [1, 365], hwapi_interval_ms: [1000, 60000] };
+const BOOL = ['ai_enabled', 'provision_enabled', 'tokutei_visiting_allowed', 'hwapi_enabled'];
+const JSON_KEYS = { refund_policy: 'array', provision_column_map: 'object', hwapi_field_map: 'object' };
 const EDITABLE = Object.keys(DEFAULTS).filter(k => !k.startsWith('crawler_'));
 
 router.get('/', (req, res) => {
   const s = getSettings();
   for (const k of Object.keys(s)) if (k.startsWith('crawler_')) delete s[k];
-  res.json({ settings: s, backupEncrypted: Boolean(process.env.BACKUP_PASSWORD), mapsApi: Boolean(process.env.GOOGLE_MAPS_API_KEY) });
+  res.json({ settings: s, backupEncrypted: Boolean(process.env.BACKUP_PASSWORD), mapsApi: Boolean(process.env.GOOGLE_MAPS_API_KEY), hwApiCredentials: Boolean(process.env.HW_API_ID && process.env.HW_API_PASSWORD) });
 });
 
 router.get('/meta', (req, res) => {
@@ -48,6 +48,7 @@ router.put('/', (req, res) => {
       if (JSON_KEYS[k] === 'array' ? !Array.isArray(parsed) : (typeof parsed !== 'object' || Array.isArray(parsed))) return res.status(400).json({ error: `${k} の形式が正しくありません` });
       if (k === 'refund_policy' && parsed.length && parsePolicy(v).length !== parsed.length) return res.status(400).json({ error: '返戻金規定の形式：[{"withinDays":30,"rate":80}]' });
     }
+    if (/^hwapi_.*_url$/.test(k) && v && !/^https:\/\//.test(v)) return res.status(400).json({ error: `${k} は https:// で始まるURLを入力してください` });
     if (k === 'fetch_cron' && !validateCron(v)) return res.status(400).json({ error: '取込スケジュール（cron式）が正しくありません' });
     changes[k] = v;
   }

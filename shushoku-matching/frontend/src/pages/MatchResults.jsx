@@ -7,6 +7,8 @@ import { PageHeader, Card, Badge, ErrorText, Loading, yen, WAGE_LABEL, LANG_LABE
 const DEFAULT_INTRO = ['未提案', '提案済', '応募', '面接', '内定', '入職', '不採用', '辞退'];
 const DECLINE_STATUSES = ['不採用', '辞退'];
 const scoreClass = s => (s >= 75 ? 'high' : s >= 55 ? 'mid' : 'low');
+const VERDICT_COLOR = { high: 'green', ok: 'blue', check: 'orange', ng: 'red' };
+const VERDICT_ORDER = { high: 0, ok: 1, check: 2, ng: 3 };
 const toLocalInput = v => (v ? String(v).replace(' ', 'T').slice(0, 16) : '');
 const fromLocalInput = v => (v ? v.replace('T', ' ') : '');
 
@@ -150,6 +152,7 @@ function MatchCard({ m, seekerId, introOptions, declineReasons, selected, onTogg
         <div className={`score ${scoreClass(m.score)}`} aria-label={`スコア${m.score}点`}>{m.score}<span style={{ fontSize: 11 }}>点</span></div>
         <div style={{ flex: 1, minWidth: 240 }}>
           <div className="row">
+            {m.breakdown?.verdict && <span className={`verdict verdict-${m.breakdown.verdict.level}`}><Badge color={VERDICT_COLOR[m.breakdown.verdict.level]}>{m.breakdown.verdict.label}</Badge></span>}
             <strong style={{ fontSize: 15 }}>{m.company_name}</strong>
             <span>{m.job_title}</span>
             {m.facility_type && <Badge color="blue">{m.facility_type}</Badge>}
@@ -169,6 +172,11 @@ function MatchCard({ m, seekerId, introOptions, declineReasons, selected, onTogg
           </div>
         </div>
       </div>
+
+      {m.breakdown?.verdict?.confirm?.length > 0 && (
+        <div className="warn-box"><strong>案内前に確認：</strong>{m.breakdown.verdict.confirm.map((c, i) => <div key={i}>・{c}</div>)}</div>
+      )}
+      {m.breakdown?.referralNote && <div className="muted" style={{ marginTop: 4 }}>※ {m.breakdown.referralNote}</div>}
 
       <dl className="kv" style={{ marginTop: 10 }}>
         <dt>勤務地</dt><dd>{m.prefecture || ''}{m.city || '—'}</dd>
@@ -489,12 +497,21 @@ export default function MatchResults() {
           <div className="row" style={{ gap: 16 }}>
             <span>有効求人 <strong>{runResult.total}</strong>件 → 除外 <strong>{runResult.excluded}</strong>件</span>
             <span>候補 <strong>{runResult.candidates}</strong>件</span>
+            {runResult.verdicts && <>
+              <Badge color="green">案内可（マッチ度高） {runResult.verdicts.high}</Badge>
+              <Badge color="blue">案内可 {runResult.verdicts.ok}</Badge>
+              <Badge color="orange">要確認 {runResult.verdicts.check}</Badge>
+            </>}
             <span>新着 <strong>{runResult.newCount}</strong>件</span>
             <Badge color={/エラー/.test(runResult.aiStatus) ? 'red' : /AI補足 \d/.test(runResult.aiStatus) ? 'green' : 'gray'}>{runResult.aiStatus}</Badge>
           </div>
         ) : (
           <div className="row" style={{ gap: 16 }}>
             <span>候補 <strong>{list.length}</strong>件</span>
+            {['high', 'ok', 'check'].map(l => {
+              const n = list.filter(m => m.breakdown?.verdict?.level === l).length;
+              return <Badge key={l} color={VERDICT_COLOR[l]}>{{ high: '案内可（マッチ度高）', ok: '案内可', check: '要確認' }[l]} {n}</Badge>;
+            })}
             <span>新着 <strong>{newIds.size}</strong>件</span>
             {lastJudged && <span className="muted">最終判定 {lastJudged}</span>}
             {!list.length && !matches.loading && <span className="muted">まだ判定していないか、候補がありません。「判定＋AI補足」を実行してください。</span>}

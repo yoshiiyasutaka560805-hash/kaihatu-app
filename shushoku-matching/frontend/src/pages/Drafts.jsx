@@ -5,7 +5,7 @@ import { useAction, useApi, useMeta } from '../hooks/useApi';
 import { Badge, Card, Check, ErrorText, LANG_LABEL, Loading, PageHeader, toForm, WAGE_LABEL, Warnings } from '../components/ui';
 import { Area, In, isEmpty, POSTING_LABELS, Sel } from './PostingDetail';
 
-const KIND_LABEL = { seeker_intake: '受付フォーム（本人入力）', seeker_memo: '面談メモAI抽出', posting_ocr: '求人票AI読取' };
+const KIND_LABEL = { seeker_sheet: '条件表取込', seeker_intake: '受付フォーム（本人入力）', seeker_memo: '面談メモAI抽出', posting_ocr: '求人票AI読取' };
 const STATUS_TABS = [['pending', '承認待ち'], ['approved', '承認済'], ['rejected', '却下']];
 const STATUS_LABEL = { pending: '承認待ち', approved: '承認済', rejected: '却下' };
 
@@ -122,7 +122,7 @@ function Uncertain({ items }) {
 function PendingDraft({ d, meta, employers, onDone }) {
   const [open, setOpen] = useState(true);
   const initial = useMemo(() => {
-    if (d.kind === 'posting_ocr') return toForm(d.data?.fields || {});
+    if (d.kind === 'posting_ocr' || d.kind === 'seeker_sheet') return toForm(d.data?.fields || {});
     const { uncertain_points, ...rest } = d.data || {}; // eslint-disable-line no-unused-vars
     return toForm(rest);
   }, [d]);
@@ -143,6 +143,12 @@ function PendingDraft({ d, meta, employers, onDone }) {
     if (d.kind === 'posting_ocr') {
       if (!employerId) { setErr('事業所を選択してください（自社受理求人として登録します）'); return; }
       body = { data: { fields: form }, employer_id: Number(employerId) };
+    } else if (d.kind === 'seeker_sheet' && !d.seeker_id) {
+      if (isEmpty(form.name)) { setErr('氏名を入力してください'); return; }
+      if (isEmpty(form.consent_date)) { setErr('個人情報取扱いの同意日を入力してください'); return; }
+      body = { data: { fields: Object.fromEntries(Object.entries(form).filter(([, v]) => !isEmpty(v))) } };
+    } else if (d.kind === 'seeker_sheet') {
+      body = { data: { fields: Object.fromEntries(Object.entries(form).filter(([, v]) => !isEmpty(v))) } };
     } else if (d.kind === 'seeker_intake') {
       if (isEmpty(form.name)) { setErr('氏名を入力してください'); return; }
       if (isEmpty(form.consent_date)) { setErr('個人情報取扱いの同意日を入力してください'); return; }

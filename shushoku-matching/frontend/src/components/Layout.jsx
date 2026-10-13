@@ -5,6 +5,7 @@ import { useMeta } from '../hooks/useApi';
 
 const NAV_ITEMS = [
   { to: '/',            label: '今日のタスク', icon: '✅' },
+  { to: '/screening',   label: '条件表から判定', icon: '🔍' },
   { to: '/seekers',     label: '求職者',       icon: '👤' },
   { to: '/postings',    label: '求人',         icon: '📋' },
   { to: '/employers',   label: '事業所',       icon: '🏢' },

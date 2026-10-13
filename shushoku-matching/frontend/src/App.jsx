@@ -19,6 +19,7 @@ import Reports from './pages/Reports';
 import Complaints from './pages/Complaints';
 import Settings from './pages/Settings';
 import Intake from './pages/Intake';
+import Screening from './pages/Screening';
 
 export default function App() {
   const { pathname } = useLocation();
@@ -35,6 +36,7 @@ export default function App() {
     <Layout>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/screening" element={<Screening />} />
         <Route path="/seekers" element={<SeekerList />} />
         <Route path="/seekers/new" element={<SeekerEdit />} />
         <Route path="/seekers/:id" element={<SeekerEdit />} />
