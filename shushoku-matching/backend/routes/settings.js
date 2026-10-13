@@ -67,4 +67,21 @@ router.post('/backup-now', ah(async (req, res) => { const r = await runBackup();
 router.get('/purge-candidates', (req, res) => res.json(purgeCandidates(addDays(todayJst(), 30))));
 router.post('/daily-now', ah(async (req, res) => res.json(await runDaily())));
 
+// 接続テスト：AI（APIキーが有効か）
+router.post('/ai-test', ah(async (req, res) => {
+  const { callStructured } = require('../services/ai/client');
+  const r = await callStructured({
+    purpose: 'connection_test', system: '接続テストです。指示どおりに答えてください。', content: '「OK」とだけ返してください。',
+    schema: { type: 'object', properties: { reply: { type: 'string' } }, required: ['reply'], additionalProperties: false },
+    maxTokens: 2000, effort: 'low',
+  });
+  res.json({ ok: true, reply: r.reply });
+}));
+
+// 接続テスト：ハローワーク求人情報提供 Web API（トークン取得のみ。求人は取得しない）
+router.post('/hwapi-test', ah(async (req, res) => {
+  const { testConnection } = require('../services/sources/hwApi');
+  res.json(await testConnection());
+}));
+
 module.exports = router;

@@ -98,6 +98,23 @@ function RefundEditor({ rows, setRows }) {
   );
 }
 
+// 接続テストボタン（AI・ハローワークAPI）
+function ConnTest({ path, label }) {
+  const [msg, setMsg] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const test = async () => {
+    setBusy(true); setMsg(null);
+    try { const r = await post(path); setMsg({ ok: r.ok !== false, text: r.message || (r.reply ? `接続成功（応答：${r.reply}）` : '接続成功') }); }
+    catch (e) { setMsg({ ok: false, text: e.message }); } finally { setBusy(false); }
+  };
+  return (
+    <div className="row" style={{ margin: '8px 0' }}>
+      <button type="button" className="btn btn-outline btn-sm" onClick={test} disabled={busy}>{busy ? 'テスト中…' : label}</button>
+      {msg && <span className={msg.ok ? 'ok-box' : 'danger-box'} style={{ margin: 0 }}>{msg.text}</span>}
+    </div>
+  );
+}
+
 function AiUsage() {
   const { data, error, loading, reload } = useApi(() => get('/settings/ai-usage'), []);
   const pct = data && data.budgetUsd > 0 ? Math.min(100, Math.round((data.monthSpentUsd / data.budgetUsd) * 100)) : 0;
@@ -107,6 +124,7 @@ function AiUsage() {
       {loading && !data && <Loading />}
       {data && (
         <>
+          <ConnTest path="/settings/ai-test" label="AI接続テスト（APIキーの確認）" />
           <dl className="kv" style={{ marginBottom: 12 }}>
             <dt>モデル</dt><dd>{data.model || '—'}</dd>
             <dt>利用可否</dt><dd>{data.available ? <Badge color="green">利用可</Badge> : <Badge color="gray">利用不可（APIキー未設定またはAI無効）</Badge>}</dd>
@@ -405,6 +423,7 @@ export default function Settings() {
             （現在：{data.hwApiCredentials ? '設定済み' : '未設定'}）。取得は「取込スケジュール」の時刻に1日1回実行されます。
           </div>
           <Check label="Web APIによる自動取得を有効にする" name="hwapi_enabled" form={form} set={set} />
+          <ConnTest path="/settings/hwapi-test" label="API接続テスト（保存後に実行）" />
           <div className="grid2">
             <In id="s-hw-token" label="トークン取得URL" name="hwapi_token_url" form={form} set={set} placeholder="https://…" />
             <In id="s-hw-data" label="データ取得URL" name="hwapi_data_url" form={form} set={set} hint="{dataId} {page} {token} が置き換わります" />

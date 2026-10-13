@@ -112,4 +112,20 @@ async function run({ fetchImpl = fetch, settings } = {}) {
   return { pages, fetchedRecords, targeted: rows.length, inserted: r.inserted, updated: r.updated, deactivated: r.deactivated, errors: r.errors.length };
 }
 
-module.exports = { run, recordToRow, collect, config };
+// 接続テスト：トークンを取得して破棄するだけ
+async function testConnection({ fetchImpl = fetch, settings } = {}) {
+  const c = config(settings);
+  if (!c.tokenUrl) throw Object.assign(new Error('トークン取得URLが未設定です'), { status: 400 });
+  const id = process.env.HW_API_ID, pass = process.env.HW_API_PASSWORD;
+  if (!id || !pass) throw Object.assign(new Error('環境変数 HW_API_ID / HW_API_PASSWORD が未設定です'), { status: 400 });
+  const res = await fetchImpl(c.tokenUrl, { method: 'POST', timeout: 30000, body: new URLSearchParams({ [c.idParam]: id, [c.passParam]: pass }),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  const text = await res.text();
+  if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
+  const node = findFirst(parser.parse(text), c.tokenTag);
+  const token = typeof node === 'object' ? node?.['#text'] : node;
+  if (token && c.logoutUrl) await fetchImpl(fill(c.logoutUrl, { token }), { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+  return token ? { ok: true, message: 'トークンを取得できました（接続成功）' } : { ok: false, message: `応答にタグ「${c.tokenTag}」が見つかりません`, sample: text.slice(0, 300) };
+}
+
+module.exports = { run, recordToRow, collect, config, testConnection };
