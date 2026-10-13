@@ -1,15 +1,15 @@
 'use strict';
 
-// 手動取込：ハローワークインターネットサービスで確認した求人を CSV または1件ずつ登録
 const { csvToObjects } = require('../csv');
 const { importRows } = require('../postingStore');
+const { decodeText } = require('../../utils/encoding');
 
-function importCsv(text) {
-  return importRows(csvToObjects(text), 'manual');
+const MAX_ROWS = 20000;
+
+function importCsvBuffer(buf, fileName) {
+  const rows = csvToObjects(decodeText(buf));
+  if (rows.length > MAX_ROWS) throw Object.assign(new Error(`行数が多すぎます（上限${MAX_ROWS}行）`), { status: 400 });
+  return importRows(rows, 'manual', { sourceFile: fileName });
 }
 
-function importOne(posting) {
-  return importRows([posting], 'manual');
-}
-
-module.exports = { importCsv, importOne };
+module.exports = { importCsvBuffer };

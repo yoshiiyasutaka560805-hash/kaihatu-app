@@ -1,0 +1,84 @@
+'use strict';
+
+// 承認待ちの下書き：受付フォーム（求職者本人入力）・面談メモAI抽出・求人票AI読取
+const express = require('express');
+const router = express.Router();
+const { getDb, getSettings, audit } = require('../database/db');
+const specs = require('../models/specs');
+const { validate, columnsOf, ah } = require('../utils/validate');
+const { extractFromMemo } = require('../services/ai/memoExtract');
+const { normalizePosting, nextOwnPostingNo } = require('../services/postingStore');
+const { todayJst, addMonths } = require('../utils/dates');
+const { currentOperator } = require('../middleware/context');
+const { detectProhibited } = require('../services/ai/pii');
+
+router.get('/', (req, res) => {
+  const rows = getDb().prepare(`SELECT d.*, s.name AS seeker_name FROM drafts d LEFT JOIN job_seekers s ON s.id = d.seeker_id
+    WHERE d.status = ? ORDER BY d.id DESC LIMIT 200`).all(req.query.status || 'pending');
+  res.json(rows.map(r => ({ ...r, data: JSON.parse(r.data) })));
+});
+
+// 面談メモ → AI抽出 → 下書き
+router.post('/memo', ah(async (req, res) => {
+  const db = getDb();
+  const seeker = db.prepare('SELECT * FROM job_seekers WHERE id = ? AND deleted_at IS NULL').get(req.body.seeker_id);
+  if (!seeker) return res.status(404).json({ error: '求職者が見つかりません' });
+  if (!seeker.ai_consent) return res.status(409).json({ error: '求職者のAI利用同意がありません' });
+  const memo = String(req.body.memo || '').trim();
+  if (!memo) return res.status(400).json({ error: 'メモを入力してください' });
+  const { data } = await extractFromMemo(seeker, memo);
+  const r = db.prepare("INSERT INTO drafts (kind, seeker_id, data, source_name) VALUES ('seeker_memo', ?, ?, '面談メモ')").run(seeker.id, JSON.stringify(data));
+  audit('draft_create', r.lastInsertRowid, { kind: 'seeker_memo' });
+  res.json({ draftId: r.lastInsertRowid, data });
+}));
+
+router.post('/:id/reject', (req, res) => {
+  getDb().prepare("UPDATE drafts SET status = 'rejected', reviewed_at = datetime('now','localtime'), reviewed_by = ? WHERE id = ? AND status = 'pending'")
+    .run(currentOperator(), req.params.id);
+  audit('draft_reject', req.params.id);
+  res.json({ ok: true });
+});
+
+// 承認：body.data に担当者が確認・修正した値を渡す
+router.post('/:id/approve', (req, res) => {
+  const db = getDb();
+  const d = db.prepare("SELECT * FROM drafts WHERE id = ? AND status = 'pending'").get(req.params.id);
+  if (!d) return res.status(404).json({ error: '承認待ちの下書きが見つかりません' });
+  const data = req.body.data || JSON.parse(d.data);
+  let resultId;
+  let prohibited = [];
+  if (d.kind === 'seeker_memo') {
+    const o = validate(data, specs.seeker);
+    delete o.name; delete o.status;
+    const cols = columnsOf(o, specs.seeker);
+    if (cols.length) db.prepare(`UPDATE job_seekers SET ${cols.map(c => `${c} = @${c}`).join(', ')}, updated_at = datetime('now','localtime') WHERE id = @id`).run({ ...o, id: d.seeker_id });
+    resultId = d.seeker_id;
+    prohibited = detectProhibited([o.notes, o.experience_note, o.priorities]);
+  } else if (d.kind === 'seeker_intake') {
+    const o = validate(data, specs.seeker, { required: ['name', 'consent_date'] });
+    o.accepted_date = o.accepted_date || todayJst();
+    o.validity_end = o.validity_end || addMonths(o.accepted_date, Number(getSettings().seeker_validity_months || 3));
+    const cols = columnsOf(o, specs.seeker);
+    resultId = db.prepare(`INSERT INTO job_seekers (${cols.join(',')}) VALUES (${cols.map(c => '@' + c).join(',')})`).run(o).lastInsertRowid;
+    prohibited = detectProhibited([o.notes, o.experience_note, o.priorities]);
+  } else if (d.kind === 'posting_ocr') {
+    const fields = data.fields || data;
+    const employerId = Number(req.body.employer_id);
+    if (!employerId) return res.status(400).json({ error: '求人票の事業所を選択してください（自社受理求人として登録します）' });
+    const emp = db.prepare('SELECT * FROM employers WHERE id = ? AND deleted_at IS NULL').get(employerId);
+    if (!emp) return res.status(400).json({ error: '事業所が見つかりません' });
+    const p = normalizePosting({ ...fields, posting_no: 'TMP', company_name: fields.company_name || emp.name, job_title: fields.job_title || '（未入力）' });
+    const hwNo = fields.posting_no && /^\d{5}-\d{8}$/.test(fields.posting_no) ? fields.posting_no : null;
+    Object.assign(p, { posting_no: nextOwnPostingNo(), origin: 'own', employer_id: employerId, hw_posting_no: hwNo,
+      received_date: p.received_date || todayJst(), source: 'ocr', source_file: d.source_name });
+    const cols = Object.keys(p);
+    resultId = db.prepare(`INSERT INTO job_postings (${cols.join(',')}) VALUES (${cols.map(c => '@' + c).join(',')})`).run(p).lastInsertRowid;
+  } else return res.status(400).json({ error: '不明な下書きです' });
+
+  db.prepare("UPDATE drafts SET status = 'approved', result_id = ?, reviewed_at = datetime('now','localtime'), reviewed_by = ? WHERE id = ?")
+    .run(resultId, currentOperator(), d.id);
+  audit('draft_approve', d.id, { kind: d.kind, result: resultId });
+  res.json({ ok: true, resultId, prohibited });
+});
+
+module.exports = router;

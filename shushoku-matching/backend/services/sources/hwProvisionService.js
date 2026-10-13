@@ -1,47 +1,42 @@
 'use strict';
 
-// 「ハローワーク求人・求職情報提供サービス」の提供データ取込
-//
-// 前提：労働局へ利用申請し、承認を受けていること（職業紹介事業者として利用可否・
-// 提供条件・二次利用範囲は申請時に要確認）。
-// 提供データは CSV で受領する想定。受領ファイルを設定「provision_dir」に置くと、
-// 未処理のファイルを取り込む。実際の提供ファイルの項目名が FIELD_ALIASES と異なる
-// 場合は postingStore.js の FIELD_ALIASES に項目名を追加すること。
+// 「求人情報オンライン提供」（管轄労働局へ利用申請）のCSV取込
+// 受領したCSVを設定「provision_dir」に置くと、未処理ファイルを取り込み imported/ へ移動する。
+// 列名が既定の対応表と異なる場合は設定「provision_column_map」（{ "CSV列名": "項目名" }）で対応させる。
+// 利用規約上、職業紹介以外の目的での利用・第三者提供・インターネット等での公開は禁止（取込データは外部出力しない）
 
 const fs = require('fs');
 const path = require('path');
 const { getDb, getSettings } = require('../../database/db');
 const { csvToObjects } = require('../csv');
 const { importRows } = require('../postingStore');
+const { decodeText } = require('../../utils/encoding');
 
-function decode(buf) {
-  // 提供データが Shift_JIS の場合に備える（UTF-8 として不正なら Shift_JIS で再デコード）
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
-  } catch {
-    return new TextDecoder('shift_jis').decode(buf);
-  }
-}
+const MAX_FILE_BYTES = 200 * 1024 * 1024;
 
 async function run() {
   const s = getSettings();
   const db = getDb();
   if (s.provision_enabled !== '1' || !s.provision_dir) {
-    db.prepare(`INSERT INTO fetch_runs (source, finished_at, status, message)
-      VALUES ('hw_provision', datetime('now','localtime'), 'skipped', ?)`)
-      .run('提供サービス取込は無効です（利用承認後に設定で有効化）');
+    db.prepare(`INSERT INTO fetch_runs (source, finished_at, status, message) VALUES ('hw_provision', datetime('now','localtime'), 'skipped', ?)`)
+      .run('オンライン提供の取込は無効です（利用承認後に設定で有効化）');
     return { skipped: true };
   }
-
+  if (!fs.existsSync(s.provision_dir)) throw new Error(`取込フォルダが見つかりません: ${s.provision_dir}`);
   const doneDir = path.join(s.provision_dir, 'imported');
   fs.mkdirSync(doneDir, { recursive: true });
-  const files = fs.readdirSync(s.provision_dir).filter(f => f.toLowerCase().endsWith('.csv'));
+  const files = fs.readdirSync(s.provision_dir).filter(f => f.toLowerCase().endsWith('.csv')).sort();
   const results = [];
   for (const f of files) {
     const full = path.join(s.provision_dir, f);
-    const r = importRows(csvToObjects(decode(fs.readFileSync(full))), 'hw_provision');
-    fs.renameSync(full, path.join(doneDir, `${Date.now()}_${f}`));
-    results.push({ file: f, ...r });
+    try {
+      if (fs.statSync(full).size > MAX_FILE_BYTES) throw new Error('ファイルが大きすぎます（200MB超）');
+      const r = importRows(csvToObjects(decodeText(fs.readFileSync(full))), 'hw_provision', { sourceFile: f, terms: s.provision_terms });
+      fs.renameSync(full, path.join(doneDir, `${Date.now()}_${f}`));
+      results.push({ file: f, inserted: r.inserted, updated: r.updated, errors: r.errors.length });
+    } catch (e) {
+      results.push({ file: f, error: e.message });
+    }
   }
   return { files: results };
 }

@@ -1,32 +1,58 @@
 'use strict';
 
+// 定期処理（node-cron）
+//   取込（設定 fetch_cron、既定 毎日2:30）：オンライン提供CSV取込 → 期限切れ無効化 → 活動中求職者の新着照合
+//   毎日3:15：保存期限切れデータの削除、バックアップ
 const cron = require('node-cron');
 const { getSettings } = require('../database/db');
 const { deactivateExpired } = require('./postingStore');
 const provision = require('./sources/hwProvisionService');
-const crawler = require('./sources/hwWebCrawler');
+const { rematchActiveSeekers } = require('./matching/runner');
+const { purgeExpired } = require('./retention');
+const { runBackup } = require('./backup');
+const { withLock } = require('../utils/lock');
+const { runAs } = require('../middleware/context');
 
-let task = null;
+let fetchTask = null;
+let dailyTask = null;
 
-async function runAll() {
-  const results = {};
-  try { results.provision = await provision.run(); } catch (e) { results.provision = { error: e.message }; }
-  try { results.crawler = await crawler.run(); } catch (e) { results.crawler = { error: e.message }; }
-  results.deactivated = deactivateExpired();
-  return results;
+function runFetch() {
+  return runAs('system', () => withLock('fetch', async () => {
+    const results = {};
+    try { results.provision = await provision.run(); } catch (e) { results.provision = { error: e.message }; }
+    results.deactivated = deactivateExpired();
+    results.rematch = await rematchActiveSeekers();
+    return results;
+  }));
 }
 
-// 夜間1日1回（既定 2:30）。各ソースは設定で無効なら skipped を記録するだけ
-function startScheduler() {
-  if (task) task.stop();
-  const expr = getSettings().crawler_cron || '30 2 * * *';
-  if (!cron.validate(expr)) {
-    console.warn(`[scheduler] cron式が不正です: ${expr}`);
-    return;
-  }
-  task = cron.schedule(expr, () => {
-    runAll().then(r => console.log('[scheduler] 求人取込', JSON.stringify(r)));
+function runDaily() {
+  return runAs('system', async () => {
+    const r = {};
+    try { r.purged = purgeExpired(); } catch (e) { r.purgeError = e.message; }
+    try { r.backup = await runBackup(); } catch (e) { r.backupError = e.message; }
+    return r;
   });
 }
 
-module.exports = { startScheduler, runAll };
+function validateCron(expr) { return cron.validate(expr); }
+
+function startScheduler() {
+  if (fetchTask) fetchTask.stop();
+  const expr = getSettings().fetch_cron;
+  fetchTask = cron.schedule(validateCron(expr) ? expr : '30 2 * * *', () => {
+    runFetch().then(r => console.log('[scheduler] 求人取込', JSON.stringify(r))).catch(e => console.error('[scheduler]', e.message));
+  }, { timezone: 'Asia/Tokyo' });
+  if (!dailyTask) {
+    dailyTask = cron.schedule('15 3 * * *', () => {
+      runDaily().then(r => console.log('[scheduler] 日次処理', JSON.stringify(r)));
+    }, { timezone: 'Asia/Tokyo' });
+  }
+}
+
+function stopScheduler() {
+  fetchTask?.stop(); dailyTask?.stop();
+  fetchTask = null; dailyTask = null;
+}
+
+module.exports = { startScheduler, stopScheduler, runFetch, runDaily, validateCron };
