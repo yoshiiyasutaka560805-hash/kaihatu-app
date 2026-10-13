@@ -7,7 +7,7 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "seed": "node database/seed.js",
-    "test": "node --test test/*.test.js"
+    "test": "TZ=Asia/Tokyo node --test test/*.test.js && TZ=UTC node --test test/*.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
