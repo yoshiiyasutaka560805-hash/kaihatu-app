@@ -111,7 +111,7 @@ function MatchCard({ m, seekerId, introOptions, declineReasons, selected, onTogg
   const b = m.breakdown || {};
   const est = b.estimates || {};
   const ai = m.ai_comment;
-  const isHw = m.origin === 'hw';
+  const isHw = m.origin !== 'own';
   const placed = m.intro_status === '入職' || !!m.placement_id;
   const dirty = JSON.stringify(sf) !== JSON.stringify(init());
   const needReason = DECLINE_STATUSES.includes(sf.intro_status);
@@ -161,7 +161,9 @@ function MatchCard({ m, seekerId, introOptions, declineReasons, selected, onTogg
             {!m.is_active && <Badge color="red">募集終了</Badge>}
           </div>
           <div className="row" style={{ marginTop: 4 }}>
-            {isHw
+            {m.origin === 'web'
+              ? <><Badge color="yellow">ネット求人{m.source_site ? `（${m.source_site}）` : ''}</Badge>{m.source_url && <a href={m.source_url} target="_blank" rel="noreferrer noopener" className="muted">掲載ページを開く</a>}</>
+              : isHw
               ? <Badge color="yellow">HW求人（紹介前に自社受理が必要）</Badge>
               : <Badge color="green">自社求人</Badge>}
             <Link to={`/postings/${m.posting_id}`} className="muted">求人 {m.posting_no}</Link>
@@ -411,6 +413,20 @@ export default function MatchResults() {
   const [newIds, setNewIds] = useState(() => new Set());
   const [proposalGuard, setProposalGuard] = useState(null);
   const autoRan = useRef(false);
+  const [webCount, setWebCount] = useState('15');
+  const [webMsg, setWebMsg] = useState(null);
+
+  // ネットで求人を探す（Web検索 → 求人を取込 → ルール判定）
+  const runWebSearch = async () => {
+    setEstMsg(''); setWebMsg(null);
+    try {
+      const r = await judge(() => post('/matches/web-search', { seekerId: Number(id), count: Number(webCount) }));
+      setRunResult(r);
+      setWebMsg(r.search);
+      matches.reload();
+      near.reload();
+    } catch { /* judgeError */ }
+  };
 
   const runJudge = async withAi => {
     setEstMsg('');
@@ -426,8 +442,9 @@ export default function MatchResults() {
   useEffect(() => {
     if (searchParams.get('run') === '1' && !autoRan.current) {
       autoRan.current = true;
+      const web = searchParams.get('web') === '1';
       setSearchParams({}, { replace: true });
-      runJudge(true);
+      if (web) runWebSearch(); else runJudge(true);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -480,6 +497,10 @@ export default function MatchResults() {
       <PageHeader title={`${s.name} さんのマッチング結果`}
         subtitle={[s.city, s.desired_categories, s.desired_job_kinds].filter(Boolean).join(' / ') || undefined}>
         <button type="button" className="btn btn-outline" onClick={() => navigate(`/seekers/${id}`)}>条件を編集</button>
+        <select className="form-select" style={{ width: 'auto' }} value={webCount} onChange={e => setWebCount(e.target.value)} aria-label="検索件数">
+          {['10', '15', '20', '30'].map(n => <option key={n} value={n}>{n}件程度</option>)}
+        </select>
+        <button type="button" className="btn btn-outline" onClick={runWebSearch} disabled={judging}>🌐 ネットで求人を探す</button>
         <button type="button" className="btn btn-outline" onClick={() => runJudge(false)} disabled={judging}>ルール判定のみ</button>
         <button type="button" className="btn btn-primary" onClick={() => runJudge(true)} disabled={judging}>{judging ? '判定中…' : '判定＋AI補足'}</button>
       </PageHeader>
@@ -492,7 +513,15 @@ export default function MatchResults() {
         </button>
       }>
         <ErrorText error={judgeError} />
-        {judging && <div className="muted" role="status">判定しています…（AI補足ありの場合は数十秒かかることがあります）</div>}
+        {judging && <div className="muted" role="status">処理しています…（ネット検索は1〜3分、AI補足は数十秒かかることがあります）</div>}
+        {webMsg && (
+          <div className="ok-box">
+            ネット検索：{webMsg.found}件見つかり、新規 {webMsg.inserted}件・更新 {webMsg.updated}件を取り込みました。
+            {webMsg.notes && <div className="muted">検索範囲：{webMsg.notes}</div>}
+            {webMsg.errors?.length > 0 && <div className="muted">取込できなかったもの：{webMsg.errors.join('、')}</div>}
+            <div className="muted">ネット求人は掲載時点の情報です。案内前に必ず掲載元のページで最新の内容を確認してください（2週間で自動的に無効になります）。</div>
+          </div>
+        )}
         {runResult ? (
           <div className="row" style={{ gap: 16 }}>
             <span>有効求人 <strong>{runResult.total}</strong>件 → 除外 <strong>{runResult.excluded}</strong>件</span>

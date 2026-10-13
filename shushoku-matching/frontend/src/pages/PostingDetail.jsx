@@ -75,7 +75,7 @@ export function postingValue(field, v) {
   return String(v);
 }
 
-export const SOURCE_LABEL = { hw_api: 'HW求人API（自動取得）', hw_provision: 'オンライン提供（労働局）', manual: 'CSV手動取込', own: '自社登録', ocr: '求人票AI読取' };
+export const SOURCE_LABEL = { web_search: 'ネット検索', hw_api: 'HW求人API（自動取得）', hw_provision: 'オンライン提供（労働局）', manual: 'CSV手動取込', own: '自社登録', ocr: '求人票AI読取' };
 
 // 職業安定法の労働条件明示項目（バックエンド postingStore.DISCLOSURE_ITEMS と対応）
 const DISCLOSURE_FIELDS = new Set(['job_title', 'description', 'job_change_scope', 'employment_term', 'trial_period', 'address',
@@ -162,7 +162,7 @@ export default function PostingDetail() {
   const { data, error, loading, reload } = useApi(() => (isNew ? Promise.resolve(null) : get(`/postings/${id}`)), [id]);
   if (!isNew && loading && !data) return <Loading />;
   if (!isNew && error) return <><PageHeader title="求人" /><ErrorText error={error} /><Link to="/postings">← 求人一覧へ</Link></>;
-  if (!isNew && data?.origin === 'hw') return <HwPosting p={data} reload={reload} />;
+  if (!isNew && data && data.origin !== 'own') return <HwPosting p={data} reload={reload} />;
   return <OwnPosting key={id || 'new'} p={data} isNew={isNew} reload={reload} />;
 }
 
@@ -234,7 +234,7 @@ function HwPosting({ p, reload }) {
   return (
     <>
       <PageHeader title={`${p.job_title || '求人'}（${p.company_name || ''}）`} subtitle={`求人番号 ${p.posting_no}`}>
-        <Badge color="blue">HW求人</Badge><StatusBadge p={p} />
+        <Badge color="blue">{p.origin === 'web' ? 'ネット求人' : 'HW求人'}</Badge><StatusBadge p={p} />
         <ActiveToggle p={p} reload={reload} />
         <Link className="btn btn-outline" to="/postings">一覧へ</Link>
       </PageHeader>

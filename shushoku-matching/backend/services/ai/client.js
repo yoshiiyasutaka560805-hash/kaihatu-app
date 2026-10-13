@@ -91,6 +91,54 @@ async function callStructured(o) {
   }
 }
 
+// サーバーツール（Web検索・Web取得）＋提出用ツールでのループ呼び出し
+// ・pause_turn は同じ会話を再送して継続（最大 maxContinuations 回）
+// ・結果は submitTool の入力として受け取る（構造化出力は検索の引用と併用できないため）
+async function callWithTools(o) {
+  ensureUsable();
+  const db = getDb();
+  const req = db.prepare(`INSERT INTO ai_requests (purpose, model, seeker_id, fields_sent, input_hash, operator)
+    VALUES (?,?,?,?,?,?)`).run(o.purpose, MODEL, o.seekerId ?? null, o.fieldsSent ? JSON.stringify(o.fieldsSent) : null,
+    crypto.createHash('sha256').update(String(o.content)).digest('hex'), currentOperator());
+  audit('ai_send', o.seekerId ?? null, { purpose: o.purpose, model: MODEL, request_id: req.lastInsertRowid });
+  const totals = { input_tokens: 0, output_tokens: 0, searches: 0 };
+  const finish = (status, error = null) => db.prepare(`UPDATE ai_requests SET status = ?, error = ?, input_tokens = ?, output_tokens = ?, cost_usd = ? WHERE id = ?`)
+    .run(status, error, totals.input_tokens, totals.output_tokens,
+      cost(MODEL, totals) + totals.searches * 0.01, req.lastInsertRowid);
+
+  const client = injectedClient || new Anthropic({ timeout: 300000, maxRetries: 2 });
+  const messages = [{ role: 'user', content: o.content }];
+  const tools = [...o.serverTools, { name: o.submitTool.name, description: o.submitTool.description, strict: true, input_schema: o.submitTool.schema }];
+  let nudged = false;
+  try {
+    for (let i = 0; i < (o.maxContinuations || 6); i++) {
+      const response = await client.beta.messages.create({
+        model: MODEL, max_tokens: o.maxTokens || 32000,
+        betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+        output_config: { effort: o.effort || 'medium' },
+        system: o.system, tools, tool_choice: { type: 'auto' }, messages,
+      });
+      const u = response.usage || {};
+      totals.input_tokens += u.input_tokens || 0;
+      totals.output_tokens += u.output_tokens || 0;
+      totals.searches += u.server_tool_use?.web_search_requests || 0;
+      if (response.stop_reason === 'refusal') throw new Error('AIが応答を辞退しました');
+      const submit = (response.content || []).find(b => b.type === 'tool_use' && b.name === o.submitTool.name);
+      if (submit) { finish('success'); return submit.input; }
+      messages.push({ role: 'assistant', content: response.content });
+      if (response.stop_reason === 'pause_turn') continue;
+      if (response.stop_reason === 'max_tokens') throw new Error('AI応答が上限で途切れました');
+      if (nudged) throw new Error('AIが結果を提出しませんでした');
+      nudged = true;
+      messages.push({ role: 'user', content: `調べた結果を ${o.submitTool.name} ツールで提出してください。見つからなかった場合は空の配列で提出してください。` });
+    }
+    throw new Error('AIの処理が規定回数内に終わりませんでした');
+  } catch (e) {
+    finish('error', String(e.message).slice(0, 500));
+    throw new Error(e.message.startsWith('AI') ? e.message : `AI呼び出しに失敗しました: ${e.message}`);
+  }
+}
+
 function usageSummary() {
   const db = getDb();
   return {
@@ -102,4 +150,4 @@ function usageSummary() {
   };
 }
 
-module.exports = { callStructured, isAvailable, ensureUsable, usageSummary, setClientForTest, MODEL, AiUnavailableError };
+module.exports = { callStructured, callWithTools, isAvailable, ensureUsable, usageSummary, setClientForTest, MODEL, AiUnavailableError };

@@ -56,6 +56,7 @@ export default function Screening() {
   const [draft, setDraft] = useState(null);
   const [form, setForm] = useState({});
   const [consentDate, setConsentDate] = useState(today());
+  const [searchWeb, setSearchWeb] = useState(true);
   const [readRun, reading, readErr] = useAction();
   const [saveRun, saving, saveErr, setSaveErr] = useAction();
   const fileId = useId();
@@ -80,7 +81,7 @@ export default function Screening() {
       fields.ai_consent = aiOk ? 1 : 0;
     }
     const r = await saveRun(() => post(`/drafts/${draft.draftId}/approve`, { data: { fields } })).catch(() => null);
-    if (r?.resultId) nav(`/seekers/${r.resultId}/matches?run=1`);
+    if (r?.resultId) nav(`/seekers/${r.resultId}/matches?run=1${searchWeb ? '&web=1' : ''}`);
   }
 
   return (
@@ -141,6 +142,10 @@ export default function Screening() {
               </div>
             </div>
           ))}
+          <label className="checkbox" style={{ marginTop: 12 }}>
+            <input type="checkbox" checked={searchWeb} onChange={e => setSearchWeb(e.target.checked)} />
+            保存後、ネット（ハローワークインターネットサービス・求人サイト等）でこの条件の求人を探してから判定する（1〜3分。検索には氏名・連絡先は使いません）
+          </label>
           <ErrorText error={saveErr} />
           <div className="row" style={{ marginTop: 12 }}>
             <button type="button" className="btn btn-primary" disabled={saving} onClick={saveAndJudge}>{saving ? '保存中…' : '③ 保存して判定する'}</button>

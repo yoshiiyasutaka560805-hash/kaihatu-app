@@ -206,7 +206,7 @@ export default function Postings() {
                   <tr key={p.id}>
                     <td><Link to={`/postings/${p.id}`}>{p.posting_no}</Link>
                       {p.hw_posting_no && <div className="muted">元HW {p.hw_posting_no}</div>}</td>
-                    <td>{p.origin === 'own' ? <Badge color="green">自社</Badge> : <Badge color="blue">HW</Badge>}</td>
+                    <td>{p.origin === 'own' ? <Badge color="green">自社</Badge> : p.origin === 'web' ? <Badge color="yellow">ネット</Badge> : <Badge color="blue">HW</Badge>}</td>
                     <td>{p.company_name}</td>
                     <td>{p.job_title}</td>
                     <td>{p.facility_type || '—'}</td>

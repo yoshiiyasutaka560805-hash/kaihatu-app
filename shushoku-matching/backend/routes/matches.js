@@ -9,6 +9,7 @@ const { runForSeeker, evaluate, activePostings } = require('../services/matching
 const { getSettings } = require('../database/db');
 const { todayJst } = require('../utils/dates');
 const { currentOperator } = require('../middleware/context');
+const { withLock } = require('../utils/lock');
 
 router.post('/run', ah(async (req, res) => {
   const seekerId = Number(req.body.seekerId);
@@ -16,10 +17,20 @@ router.post('/run', ah(async (req, res) => {
   res.json(await runForSeeker(seekerId, { withAi: req.body.withAi !== false }));
 }));
 
+// ネットで求人を探す → 取込 → 判定
+router.post('/web-search', ah(async (req, res) => {
+  const seekerId = Number(req.body.seekerId);
+  if (!seekerId) return res.status(400).json({ error: 'seekerId が必要です' });
+  const { searchWebJobs } = require('../services/ai/webJobSearch');
+  const search = await withLock(`web:${seekerId}`, () => searchWebJobs(seekerId, { count: req.body.count }));
+  const judge = await runForSeeker(seekerId, { withAi: false });
+  res.json({ search, ...judge });
+}));
+
 router.get('/', (req, res) => {
   const rows = getDb().prepare(`SELECT m.*, p.posting_no, p.origin, p.company_name, p.prefecture, p.city, p.job_title,
       p.facility_type, p.employment_type, p.employment_term, p.wage_type, p.wage_min, p.wage_max, p.work_start, p.work_end,
-      p.shift_work, p.nights_per_month, p.annual_holidays, p.expiry_date, p.source_url, p.is_active, p.employer_id,
+      p.shift_work, p.nights_per_month, p.source, p.source_file AS source_site, p.annual_holidays, p.expiry_date, p.source_url, p.is_active, p.employer_id,
       c.minutes AS commute_minutes, c.source AS commute_source, pl.id AS placement_id
     FROM matches m JOIN job_postings p ON p.id = m.posting_id
     LEFT JOIN commute_cache c ON c.seeker_id = m.seeker_id AND c.posting_id = m.posting_id

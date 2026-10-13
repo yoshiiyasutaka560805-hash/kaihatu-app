@@ -128,7 +128,7 @@ function upsertPosting(p, source, extra = {}) {
       WHERE posting_no = @posting_no`).run(row);
     return 'updated';
   }
-  db.prepare(`INSERT INTO job_postings (${cols.join(', ')}, origin) VALUES (${cols.map(c => '@' + c).join(', ')}, 'hw')`).run(row);
+  db.prepare(`INSERT INTO job_postings (${cols.join(', ')}, origin) VALUES (${cols.map(c => '@' + c).join(', ')}, ?)`).run(row, source === 'web_search' ? 'web' : 'hw');
   return 'inserted';
 }
 
