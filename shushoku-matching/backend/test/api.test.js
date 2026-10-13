@@ -200,3 +200,22 @@ test('求職者更新：必須・自動設定項目は空で上書きしない',
   assert.ok(row.accepted_date && row.validity_end);
   assert.equal(row.city, '堺市');
 });
+
+test('職員ログイン：未ログインは401、受付フォームは公開、ログイン失敗の制限', async () => {
+  const { getBase } = require('./helpers');
+  const b = getBase();
+  const h = { 'X-Rianet-App': '1', 'Content-Type': 'application/json' };
+  assert.equal((await fetch(`${b}/api/seekers`, { headers: h })).status, 401);
+  assert.equal((await fetch(`${b}/api/intake`, { method: 'POST', headers: h, body: JSON.stringify({ name: 'x', consent: true }) })).status, 200);
+  const st = await (await fetch(`${b}/api/auth/status`, { headers: h })).json();
+  assert.deepEqual(st, { setup: true, loggedIn: false });
+  assert.equal((await fetch(`${b}/api/auth/setup`, { method: 'POST', headers: h, body: JSON.stringify({ password: 'another-pass' }) })).status, 409);
+  for (let i = 0; i < 5; i++) await fetch(`${b}/api/auth/login`, { method: 'POST', headers: h, body: JSON.stringify({ password: 'wrong' }) });
+  assert.equal((await fetch(`${b}/api/auth/login`, { method: 'POST', headers: h, body: JSON.stringify({ password: 'test-password' }) })).status, 429);
+  require('../middleware/auth').resetForTest();
+  const ok = await fetch(`${b}/api/auth/login`, { method: 'POST', headers: h, body: JSON.stringify({ password: 'test-password' }) });
+  assert.equal(ok.status, 200);
+  assert.match(ok.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
+  const intake = getDb().prepare("SELECT operator FROM audit_log WHERE action = 'draft_create' ORDER BY id DESC").get();
+  assert.equal(intake.operator, '受付フォーム');
+});

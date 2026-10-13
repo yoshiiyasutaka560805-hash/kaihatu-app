@@ -6,6 +6,7 @@ const { getDb } = require('./database/db');
 const { startScheduler } = require('./services/scheduler');
 const { securityMiddleware } = require('./middleware/security');
 const { contextMiddleware } = require('./middleware/context');
+const { authMiddleware, authRouter } = require('./middleware/auth');
 const misc = require('./routes/misc');
 
 function createApp() {
@@ -15,6 +16,8 @@ function createApp() {
   app.use(securityMiddleware);
   app.use(express.json({ limit: '1mb' }));
   app.use(contextMiddleware);
+  app.use(authMiddleware);
+  app.use('/api/auth', authRouter);
 
   app.use('/api/seekers',     require('./routes/seekers'));
   app.use('/api/matches',     require('./routes/matches'));

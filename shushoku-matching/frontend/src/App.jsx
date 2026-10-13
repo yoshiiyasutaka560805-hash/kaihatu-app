@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { get, onUnauthorized } from './api/client';
+import Login from './pages/Login';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
@@ -20,8 +22,14 @@ import Intake from './pages/Intake';
 
 export default function App() {
   const { pathname } = useLocation();
-  // 本人入力の受付フォームと印刷用提案書はサイドメニューなしで表示
+  const [auth, setAuth] = useState(null);
+  const check = useCallback(() => get('/auth/status').then(setAuth).catch(() => setAuth({ setup: true, loggedIn: false })), []);
+  useEffect(() => { check(); return onUnauthorized(() => setAuth(a => ({ ...(a || { setup: true }), loggedIn: false }))); }, [check]);
+
+  // 本人入力の受付フォームはログイン不要・サイドメニューなし
   if (pathname.startsWith('/intake')) return <Intake />;
+  if (!auth) return <div className="loading">読み込み中…</div>;
+  if (!auth.loggedIn) return <Login setup={!auth.setup} onDone={check} />;
   if (/^\/proposals\/\d+/.test(pathname)) return <Routes><Route path="/proposals/:id" element={<ProposalPrint />} /></Routes>;
   return (
     <Layout>

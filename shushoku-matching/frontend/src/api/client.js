@@ -16,10 +16,15 @@ function headers(extra = {}) {
   return { 'X-Rianet-App': '1', 'X-Operator': encodeURIComponent(getOperator() || '未選択'), ...extra };
 }
 
+// 未ログイン（401）を App に通知してログイン画面へ戻す
+const listeners = new Set();
+export function onUnauthorized(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+
 async function handle(res) {
   const text = await res.text();
   let body;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (res.status === 401 && body && body.auth) listeners.forEach(fn => fn());
   if (!res.ok) {
     const err = new Error((body && body.error) || res.statusText);
     err.status = res.status;
@@ -58,6 +63,7 @@ export async function upload(path, file, fields = {}) {
 // CSV 等のダウンロード（独自ヘッダが必要なため fetch → Blob で保存）
 export async function download(path, fallbackName = 'download.csv') {
   const res = await fetch(`${BASE}${path}`, { headers: headers() });
+  if (res.status === 401) listeners.forEach(fn => fn());
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
   const cd = res.headers.get('Content-Disposition') || '';
   const m = cd.match(/filename\*=UTF-8''([^;]+)/);

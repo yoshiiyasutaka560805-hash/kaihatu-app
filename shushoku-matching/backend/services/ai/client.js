@@ -7,7 +7,7 @@
 
 const crypto = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
-const { getDb, getSettings } = require('../../database/db');
+const { getDb, getSettings, audit } = require('../../database/db');
 const { currentOperator } = require('../../middleware/context');
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5-5';
@@ -54,6 +54,7 @@ async function callStructured(o) {
   const req = db.prepare(`INSERT INTO ai_requests (purpose, model, seeker_id, fields_sent, input_hash, operator)
     VALUES (?,?,?,?,?,?)`).run(o.purpose, MODEL, o.seekerId ?? null, o.fieldsSent ? JSON.stringify(o.fieldsSent) : null,
     crypto.createHash('sha256').update(contentText).digest('hex'), currentOperator());
+  audit('ai_send', o.seekerId ?? null, { purpose: o.purpose, model: MODEL, request_id: req.lastInsertRowid });
   const finish = (fields) => {
     const cols = Object.keys(fields);
     db.prepare(`UPDATE ai_requests SET ${cols.map(c => `${c} = @${c}`).join(', ')} WHERE id = @id`).run({ ...fields, id: req.lastInsertRowid });

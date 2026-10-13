@@ -7,6 +7,7 @@ const { getDb, audit } = require('../database/db');
 const specs = require('../models/specs');
 const { validate } = require('../utils/validate');
 const { todayJst } = require('../utils/dates');
+const { runAs } = require('../middleware/context');
 
 const INTAKE_FIELDS = ['name', 'name_kana', 'phone', 'email', 'address', 'birth_date', 'preferred_language', 'prefecture', 'city',
   'nearest_station', 'transport', 'max_commute_minutes', 'desired_job_kinds', 'desired_facility_types', 'desired_employment',
@@ -21,7 +22,7 @@ router.post('/', (req, res) => {
   o.consent_date = todayJst();
   const r = getDb().prepare("INSERT INTO drafts (kind, data, source_name) VALUES ('seeker_intake', ?, ?)")
     .run(JSON.stringify(o), `受付フォーム（${o.preferred_language || 'ja'}）`);
-  audit('draft_create', r.lastInsertRowid, { kind: 'seeker_intake' });
+  runAs('受付フォーム', () => audit('draft_create', r.lastInsertRowid, { kind: 'seeker_intake' }));
   res.json({ ok: true });
 });
 
