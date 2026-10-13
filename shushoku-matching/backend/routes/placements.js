@@ -67,13 +67,18 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const p = load(req.params.id);
   const o = validate(req.body, specs.placement);
+  for (const k of ['hire_date', 'employment_term', 'fee_basis_months']) if (k in o && o[k] == null) delete o[k];
   const s = getSettings();
   if (o.invoice_date && !o.due_date && !p.due_date) o.due_date = addDays(o.invoice_date, Number(s.invoice_due_days || 30));
   const merged = { ...p, ...o };
   const warnings = [];
   // 離職入力時は返戻金を自動計算（手入力値があれば優先）
-  if (o.separation_date && o.refund_amount === undefined && p.refund_amount == null) {
-    const r = calcRefund({ hireDate: merged.hire_date, separationDate: o.separation_date, feeAmount: merged.paid_amount || merged.fee_amount,
+  // 返戻額は「今回空欄で送られた」または「未保存」の場合に自動計算（手入力値があれば優先）
+  const sepDate = o.separation_date ?? p.separation_date;
+  const wantsRecalc = 'refund_amount' in o ? o.refund_amount == null : p.refund_amount == null;
+  if (sepDate && wantsRecalc && (o.separation_date || 'refund_amount' in o)) {
+    o.separation_date = sepDate;
+    const r = calcRefund({ hireDate: merged.hire_date, separationDate: sepDate, feeAmount: merged.paid_amount || merged.fee_amount,
       separationType: merged.separation_type, policyJson: p.employer_refund_policy });
     if (r.amount != null) { o.refund_rate = r.rate; o.refund_amount = r.amount; }
     if (r.note) warnings.push(r.note);
@@ -87,8 +92,10 @@ router.put('/:id', (req, res) => {
 
 router.post('/:id/calc-fee', (req, res) => {
   const p = load(req.params.id);
-  const r = calcFee({ monthlyWage: req.body.monthly_wage ?? p.monthly_wage, basisMonths: req.body.fee_basis_months ?? p.fee_basis_months,
-    ratePercent: req.body.fee_rate_percent ?? p.fee_rate_percent ?? p.employer_fee_rate ?? null });
+  const b = validate(req.body, { monthly_wage: 'yen', fee_basis_months: 'num', fee_rate_percent: 'num' });
+  // 率を空欄にした場合は、保存値ではなく事業所→設定の率を使う
+  const rate = 'fee_rate_percent' in b ? (b.fee_rate_percent ?? p.employer_fee_rate ?? null) : (p.fee_rate_percent ?? p.employer_fee_rate ?? null);
+  const r = calcFee({ monthlyWage: b.monthly_wage ?? p.monthly_wage, basisMonths: b.fee_basis_months ?? p.fee_basis_months, ratePercent: rate });
   res.json(r);
 });
 

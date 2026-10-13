@@ -9,6 +9,7 @@ const { todayJst } = require('../utils/dates');
 const { currentOperator } = require('../middleware/context');
 
 const LABELS = {
+  title: '求人のご紹介', for: '様', date: '作成日',
   company: '事業所', job: '職種', place: '勤務地', facility: '施設の種類', employment: '雇用形態', term: '契約期間',
   wage: '賃金', monthly: '月の見込み額', annual: '年収の見込み', hours: '勤務時間', night: '夜勤', holidays: '年間休日',
   commute: '通勤', licenses: '必要な資格', description: '仕事の内容', expiry: '紹介期限',

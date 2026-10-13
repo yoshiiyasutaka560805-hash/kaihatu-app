@@ -6,7 +6,7 @@ const router = express.Router();
 const { getDb, getSettings, audit } = require('../database/db');
 const specs = require('../models/specs');
 const { validate, columnsOf, ah } = require('../utils/validate');
-const { extractFromMemo } = require('../services/ai/memoExtract');
+const { extractFromMemo, SCHEMA: MEMO_SCHEMA } = require('../services/ai/memoExtract');
 const { normalizePosting, nextOwnPostingNo } = require('../services/postingStore');
 const { todayJst, addMonths } = require('../utils/dates');
 const { currentOperator } = require('../middleware/context');
@@ -48,8 +48,10 @@ router.post('/:id/approve', (req, res) => {
   let resultId;
   let prohibited = [];
   if (d.kind === 'seeker_memo') {
-    const o = validate(data, specs.seeker);
-    delete o.name; delete o.status;
+    // AI抽出で扱う希望条件の項目のみ反映（氏名・連絡先・ステータス・同意等は変更させない）
+    const allowed = Object.keys(MEMO_SCHEMA.properties).filter(k => k in specs.seeker);
+    const o = validate(Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k))), specs.seeker);
+    for (const k of Object.keys(o)) if (o[k] == null) delete o[k];
     const cols = columnsOf(o, specs.seeker);
     if (cols.length) db.prepare(`UPDATE job_seekers SET ${cols.map(c => `${c} = @${c}`).join(', ')}, updated_at = datetime('now','localtime') WHERE id = @id`).run({ ...o, id: d.seeker_id });
     resultId = d.seeker_id;
@@ -67,7 +69,12 @@ router.post('/:id/approve', (req, res) => {
     if (!employerId) return res.status(400).json({ error: '求人票の事業所を選択してください（自社受理求人として登録します）' });
     const emp = db.prepare('SELECT * FROM employers WHERE id = ? AND deleted_at IS NULL').get(employerId);
     if (!emp) return res.status(400).json({ error: '事業所が見つかりません' });
-    const p = normalizePosting({ ...fields, posting_no: 'TMP', company_name: fields.company_name || emp.name, job_title: fields.job_title || '（未入力）' });
+    let p;
+    try {
+      p = normalizePosting({ ...fields, posting_no: 'TMP', company_name: fields.company_name || emp.name, job_title: fields.job_title || '（未入力）' });
+    } catch (e) {
+      return res.status(400).json({ error: e.message.replace('求人番号 TMP: ', '') });
+    }
     const hwNo = fields.posting_no && /^\d{5}-\d{8}$/.test(fields.posting_no) ? fields.posting_no : null;
     Object.assign(p, { posting_no: nextOwnPostingNo(), origin: 'own', employer_id: employerId, hw_posting_no: hwNo,
       received_date: p.received_date || todayJst(), source: 'ocr', source_file: d.source_name });

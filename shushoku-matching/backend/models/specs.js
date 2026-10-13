@@ -66,7 +66,7 @@ const placement = {
 };
 
 const followup = { kind: ['1週', '1か月', '3か月', '6か月', 'その他'], due_date: 'date', done_date: 'date',
-  method: 'text:30', still_employed: 'bool', note: 'text:2000' };
+  method: 'text:30', still_employed: 'tribool', note: 'text:2000' };
 
 const complaint = { received_date: 'date', from_type: ['求職者', '求人者', 'その他'], from_name: 'text:50',
   seeker_id: 'int', employer_id: 'int', content: 'text:3000', response: 'text:3000', responder: 'text:30',

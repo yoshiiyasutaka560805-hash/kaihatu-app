@@ -63,7 +63,7 @@ router.put('/:id', (req, res) => {
     if (cols.length) db.prepare(`UPDATE matches SET ${cols.map(c => `${c} = @${c}`).join(', ')}, is_new = 0 WHERE id = @id`).run({ ...o, id: m.id });
     if (o.intro_status && o.intro_status !== m.intro_status) {
       db.prepare('INSERT INTO match_events (match_id, from_status, to_status, note, operator) VALUES (?,?,?,?,?)')
-        .run(m.id, m.intro_status, o.intro_status, o.note || o.decline_reason || null, currentOperator());
+        .run(m.id, m.intro_status, o.intro_status, o.decline_reason || (o.note ? String(o.note).slice(0, 100) : null), currentOperator());
       // 求職者のステータスを連動（受付→紹介中→面接）
       const s = db.prepare('SELECT status FROM job_seekers WHERE id = ?').get(m.seeker_id);
       const next = { 提案済: '紹介中', 応募: '紹介中', 面接: '面接', 内定: '内定' }[o.intro_status];

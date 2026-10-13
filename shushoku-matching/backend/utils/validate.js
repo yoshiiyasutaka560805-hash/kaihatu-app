@@ -49,6 +49,7 @@ function validate(body, spec, { required = [] } = {}) {
         case 'yen': v = empty ? null : parseYen(raw); if (!empty && v == null) throw new ValidationError(`${field}: 金額を入力してください`); break;
         case 'num': v = empty ? null : parseNum(raw); if (!empty && v == null) throw new ValidationError(`${field}: 数値を入力してください`); break;
         case 'bool': v = empty ? 0 : (parseBool(raw) ?? (raw ? 1 : 0)); break;
+        case 'tribool': v = empty ? null : (parseBool(raw) ?? (raw ? 1 : 0)); break; // 未確認(null)/はい/いいえ
         case 'url': v = empty ? null : safeUrl(raw); if (!empty && !v) throw new ValidationError(`${field}: http(s) のURLのみ登録できます`); break;
         default: throw new Error(`unknown type ${type}`);
       }

@@ -189,3 +189,14 @@ test('苦情受付簿', async () => {
   await api('PUT', `/api/complaints/${c.body.id}`, { response: '担当者から謝罪し連絡体制を見直し', completed_date: today });
   assert.equal((await api('GET', '/api/complaints')).body[0].completed_date, today);
 });
+
+test('求職者更新：必須・自動設定項目は空で上書きしない', async () => {
+  const s = await api('POST', '/api/seekers', { name: '空更新 テスト', consent_date: todayJst() });
+  const r = await api('PUT', `/api/seekers/${s.body.id}`, { status: '', accepted_date: '', validity_end: '', name: '', city: '堺市' });
+  assert.equal(r.status, 200);
+  const row = getDb().prepare('SELECT * FROM job_seekers WHERE id = ?').get(s.body.id);
+  assert.equal(row.status, '受付');
+  assert.equal(row.name, '空更新 テスト');
+  assert.ok(row.accepted_date && row.validity_end);
+  assert.equal(row.city, '堺市');
+});

@@ -51,9 +51,14 @@ router.post('/', (req, res) => {
   res.json({ id: r.lastInsertRowid, prohibited: prohibitedOf(o) });
 });
 
+// 空にできない項目（NOT NULL・自動設定・同意記録）は、空で送られても更新しない
+const KEEP_IF_EMPTY = ['name', 'status', 'consent_date', 'accepted_date', 'validity_end', 'preferred_language',
+  'weight_profile', 'desired_wage_type'];
+
 router.put('/:id', (req, res) => {
   const before = load(req.params.id);
   const o = validate(req.body, specs.seeker);
+  for (const k of KEEP_IF_EMPTY) if (k in o && (o[k] == null || o[k] === '')) delete o[k];
   const cols = columnsOf(o, specs.seeker);
   if (cols.length) {
     getDb().prepare(`UPDATE job_seekers SET ${cols.map(c => `${c} = @${c}`).join(', ')}, updated_at = datetime('now','localtime')
