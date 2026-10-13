@@ -5,7 +5,7 @@ const router = express.Router();
 const { getDb, audit } = require('../database/db');
 const specs = require('../models/specs');
 const { validate, columnsOf, ah } = require('../utils/validate');
-const { runForSeeker, evaluate } = require('../services/matching/runner');
+const { runForSeeker, evaluate, activePostings } = require('../services/matching/runner');
 const { getSettings } = require('../database/db');
 const { todayJst } = require('../utils/dates');
 const { currentOperator } = require('../middleware/context');
@@ -32,7 +32,7 @@ router.get('/', (req, res) => {
 router.get('/near-misses', (req, res) => {
   const seeker = getDb().prepare('SELECT * FROM job_seekers WHERE id = ? AND deleted_at IS NULL').get(req.query.seekerId);
   if (!seeker) return res.status(404).json({ error: '求職者が見つかりません' });
-  const postings = getDb().prepare('SELECT * FROM job_postings WHERE is_active = 1').all();
+  const postings = activePostings();
   const { nearMisses } = evaluate(seeker, postings, getSettings());
   res.json(nearMisses.slice(0, 30).map(n => ({ posting_id: n.posting.id, posting_no: n.posting.posting_no,
     company_name: n.posting.company_name, job_title: n.posting.job_title, city: n.posting.city, score: n.match.score,

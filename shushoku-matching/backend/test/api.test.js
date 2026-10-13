@@ -90,6 +90,7 @@ test('求職者登録 → 判定 → 選考履歴 → 成約 → 手数料・フ
   const list = (await api('GET', `/api/matches?seekerId=${seekerId}`)).body;
   const own = list.find(m => m.posting_id === ownPostingId);
   assert.ok(own);
+  assert.ok(!list.some(m => m.posting_id === hwPostingId), '自社求人化済みのHW求人は候補に重複しない');
   matchId = own.id;
 
   assert.equal((await api('PUT', `/api/matches/${matchId}`, { intro_status: '辞退' })).status, 400);

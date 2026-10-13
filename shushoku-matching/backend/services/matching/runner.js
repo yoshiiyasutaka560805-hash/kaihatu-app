@@ -41,6 +41,12 @@ function evaluate(seeker, postings, settings) {
   return { hits, nearMisses, excluded };
 }
 
+// 判定対象の求人：有効なもの。ただし自社求人化済みのHW求人は自社求人側で判定する（重複表示を防ぐ）
+function activePostings() {
+  return getDb().prepare(`SELECT * FROM job_postings p WHERE p.is_active = 1 AND NOT (p.origin = 'hw' AND EXISTS (
+    SELECT 1 FROM job_postings o WHERE o.origin = 'own' AND o.hw_posting_no = p.posting_no))`).all();
+}
+
 // 求職者1名について全有効求人を判定し matches を更新
 async function runForSeeker(seekerId, { withAi = true, markNew = false } = {}) {
   return withLock(`match:${seekerId}`, async () => {
@@ -49,7 +55,7 @@ async function runForSeeker(seekerId, { withAi = true, markNew = false } = {}) {
     if (!seeker) { const e = new Error('求職者が見つかりません'); e.status = 404; throw e; }
     const settings = getSettings();
     const minScore = parseInt(settings.match_min_score, 10) || 0;
-    const postings = db.prepare('SELECT * FROM job_postings WHERE is_active = 1').all();
+    const postings = activePostings();
     const { hits: all, nearMisses, excluded } = evaluate(seeker, postings, settings);
     const hits = all.filter(h => h.match.score >= minScore);
 
@@ -122,4 +128,4 @@ async function rematchActiveSeekers() {
   return { seekers: ids.length, newCandidates: newTotal };
 }
 
-module.exports = { runForSeeker, rematchActiveSeekers, solicitationGuard, evaluate };
+module.exports = { runForSeeker, rematchActiveSeekers, solicitationGuard, evaluate, activePostings };
