@@ -1,0 +1,104 @@
+'use strict';
+
+// Claude API 呼び出しの共通部
+// ・月額予算の上限チェック（ai_requests の当月合計）
+// ・送信前に ai_requests へ記録（送信項目・入力ハッシュ・操作者）し、結果を追記
+// ・構造化出力（json_schema）と拒否・途中終了の扱い
+
+const crypto = require('crypto');
+const Anthropic = require('@anthropic-ai/sdk');
+const { getDb, getSettings } = require('../../database/db');
+const { currentOperator } = require('../../middleware/context');
+
+const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5-5';
+// 1Mトークンあたり米ドル（入力, 出力）。概算の費用管理用
+const PRICING = {
+  'claude-opus-5-5': [4, 20], 'claude-sonnet-5-5': [2, 10], 'claude-haiku-5-5': [0.1, 0.5], 'claude-fable-5-1': [10, 50],
+};
+
+let injectedClient = null;
+function setClientForTest(c) { injectedClient = c; }
+
+function isAvailable() {
+  return Boolean(injectedClient || process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+}
+
+function monthSpent() {
+  const ym = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 7);
+  return getDb().prepare("SELECT COALESCE(SUM(cost_usd),0) s FROM ai_requests WHERE substr(at,1,7) = ?").get(ym).s;
+}
+
+function cost(model, usage) {
+  const [i, o] = PRICING[model] || PRICING['claude-opus-5-5'];
+  return ((usage?.input_tokens || 0) * i + (usage?.output_tokens || 0) * o) / 1e6;
+}
+
+class AiUnavailableError extends Error { constructor(m) { super(m); this.status = 409; } }
+
+function ensureUsable() {
+  const s = getSettings();
+  if (s.ai_enabled !== '1') throw new AiUnavailableError('AI機能は設定で無効です');
+  if (!isAvailable()) throw new AiUnavailableError('APIキー（ANTHROPIC_API_KEY）が未設定です');
+  const budget = Number(s.ai_monthly_budget_usd || 0);
+  if (budget > 0 && monthSpent() >= budget) throw new AiUnavailableError(`今月のAI利用額が予算（$${budget}）に達しました`);
+}
+
+/**
+ * 構造化出力で1回呼び出す
+ * @param {object} o { purpose, system, content (string|array), schema, seekerId, fieldsSent, maxTokens, effort }
+ */
+async function callStructured(o) {
+  ensureUsable();
+  const db = getDb();
+  const contentText = typeof o.content === 'string' ? o.content : JSON.stringify(o.content).slice(0, 200000);
+  const req = db.prepare(`INSERT INTO ai_requests (purpose, model, seeker_id, fields_sent, input_hash, operator)
+    VALUES (?,?,?,?,?,?)`).run(o.purpose, MODEL, o.seekerId ?? null, o.fieldsSent ? JSON.stringify(o.fieldsSent) : null,
+    crypto.createHash('sha256').update(contentText).digest('hex'), currentOperator());
+  const finish = (fields) => {
+    const cols = Object.keys(fields);
+    db.prepare(`UPDATE ai_requests SET ${cols.map(c => `${c} = @${c}`).join(', ')} WHERE id = @id`).run({ ...fields, id: req.lastInsertRowid });
+  };
+
+  const client = injectedClient || new Anthropic({ timeout: 120000, maxRetries: 2 });
+  let response;
+  try {
+    response = await client.beta.messages.create({
+      model: MODEL,
+      max_tokens: o.maxTokens || 16000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: o.effort || 'medium', format: { type: 'json_schema', schema: o.schema } },
+      system: o.system,
+      messages: [{ role: 'user', content: o.content }],
+    });
+  } catch (e) {
+    finish({ status: 'error', error: String(e.message).slice(0, 500) });
+    throw new Error(`AI呼び出しに失敗しました: ${e.message}`);
+  }
+  const usage = response.usage || {};
+  const base = { input_tokens: usage.input_tokens || 0, output_tokens: usage.output_tokens || 0, cost_usd: cost(MODEL, usage) };
+  if (response.stop_reason === 'refusal') { finish({ ...base, status: 'error', error: 'refusal' }); throw new Error('AIが応答を辞退しました'); }
+  if (response.stop_reason === 'max_tokens') { finish({ ...base, status: 'error', error: 'max_tokens' }); throw new Error('AI応答が上限で途切れました'); }
+  const text = (response.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  try {
+    const parsed = JSON.parse(text);
+    finish({ ...base, status: 'success' });
+    return parsed;
+  } catch {
+    finish({ ...base, status: 'error', error: 'invalid json' });
+    throw new Error('AI応答を解析できませんでした');
+  }
+}
+
+function usageSummary() {
+  const db = getDb();
+  return {
+    model: MODEL,
+    available: isAvailable(),
+    monthSpentUsd: Math.round(monthSpent() * 100) / 100,
+    budgetUsd: Number(getSettings().ai_monthly_budget_usd || 0),
+    recent: db.prepare('SELECT id, at, purpose, model, seeker_id, status, input_tokens, output_tokens, cost_usd, error, operator FROM ai_requests ORDER BY id DESC LIMIT 100').all(),
+  };
+}
+
+module.exports = { callStructured, isAvailable, ensureUsable, usageSummary, setClientForTest, MODEL, AiUnavailableError };
