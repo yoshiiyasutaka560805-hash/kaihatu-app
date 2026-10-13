@@ -106,3 +106,16 @@ test('重みプロファイル：賃金重視は賃金配点40', () => {
   assert.equal(r.items.find(i => i.label === '賃金').max, 40);
   assert.equal(r.items.reduce((s, i) => s + i.max, 0), 100);
 });
+
+test('案内可否の4段階判定', () => {
+  assert.equal(run({}, {}).verdict.level, 'high');
+  assert.equal(run({ desired_categories: '事務', desired_facility_types: '' }, {}).verdict.level, 'ok');
+  assert.equal(run({ is_foreign_national: 1, visa_status: '永住者' }, {}).verdict.level, 'check');
+  assert.equal(run({}, { city: '大阪市北区' }).verdict.level, 'ng');
+  assert.equal(run({}, { city: '大阪市北区' }).verdict.label, '案内不可');
+  const sparse = run({}, { annual_holidays: null, days_per_week: null, work_start: null, description: null, facility_type: null, employment_term: null });
+  assert.equal(sparse.verdict.level, 'check');
+  assert.ok(sparse.verdict.confirm.some(c => c.includes('充足率')));
+  assert.ok(run({}, {}).referralNote.includes('自社求人化'));
+  assert.equal(run({}, { origin: 'own' }).referralNote, null);
+});

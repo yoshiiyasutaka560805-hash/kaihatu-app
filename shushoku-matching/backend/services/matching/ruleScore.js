@@ -56,6 +56,25 @@ function seekerAreas(seeker) {
   return list.map(t => parseArea(t, seeker.prefecture)).filter(Boolean);
 }
 
+// 案内可否の判定（4段階）
+//   ng    案内不可       … 必須条件を満たさない
+//   check 要確認         … 条件は満たすが、案内前に確認が必要な事項がある（在留・受入可否・年齢・情報不足など）
+//   high  案内可（マッチ度高）… 確認事項なし・スコアが基準以上
+//   ok    案内可         … 確認事項なし
+const CONFIRM_PATTERNS = [/在留カード原本/, /在留期限まで/, /外国人雇用/, /特定技能の受入れ/, /年齢条件/, /夜勤回数が不明/,
+  /資格外活動/, /日本語/];
+const VERDICT_LABEL = { ng: '案内不可', check: '要確認', high: '案内可（マッチ度高）', ok: '案内可' };
+
+function verdictOf({ excluded, score, warnings, completeness: comp }, highScore = 75) {
+  let level;
+  const confirms = warnings.filter(w => CONFIRM_PATTERNS.some(re => re.test(w)));
+  if (excluded) level = 'ng';
+  else if (confirms.length || comp < 60) level = 'check';
+  else level = score >= highScore ? 'high' : 'ok';
+  const reasons = level === 'check' ? [...confirms, ...(comp < 60 ? [`求人情報の充足率が${comp}%と低い（求人票の詳細を確認）`] : [])] : [];
+  return { level, label: VERDICT_LABEL[level], confirm: reasons };
+}
+
 function scoreMatch(seeker, posting, ctx = {}) {
   const today = ctx.today || todayJst();
   const settings = ctx.settings || {};
@@ -226,14 +245,17 @@ function scoreMatch(seeker, posting, ctx = {}) {
 
   const score = Math.min(100, items.reduce((s, i) => s + i.points, 0));
   const annual = postingAnnual(posting, 'min');
+  const comp = completeness(posting);
   return {
+    verdict: verdictOf({ excluded: reasons.length > 0, score, warnings, completeness: comp }, ctx.highScore),
+    referralNote: posting.origin === 'own' ? null : '紹介するには、求人者へ連絡し求人申込みを受理（自社求人化）する必要があります',
     excluded: reasons.length > 0,
     reasons: reasons.map(r => r.text),
     reasonDetails: reasons,
     score, items, warnings,
-    completeness: completeness(posting),
+    completeness: comp,
     estimates: { monthlyMin: bottom, monthlyMax: top, annualMin: annual, desiredMonthly },
   };
 }
 
-module.exports = { scoreMatch, WEIGHTS, hasLicense, completeness };
+module.exports = { scoreMatch, WEIGHTS, hasLicense, completeness, verdictOf, VERDICT_LABEL };

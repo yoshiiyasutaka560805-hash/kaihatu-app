@@ -26,7 +26,7 @@ function evaluate(seeker, postings, settings) {
   const hits = [], nearMisses = [];
   let excluded = 0;
   for (const p of postings) {
-    const m = scoreMatch(seeker, p, { today, settings, commuteMinutes: commutes.get(p.id) });
+    const m = scoreMatch(seeker, p, { today, settings, commuteMinutes: commutes.get(p.id), highScore: Number(settings.verdict_high_score || 75) });
     if (m.excluded) {
       excluded++;
       if (m.reasonDetails.length === 1 && !['inactive', 'expired', 'residence_expired'].includes(m.reasonDetails[0].code)) {
@@ -105,8 +105,10 @@ async function runForSeeker(seekerId, { withAi = true, markNew = false } = {}) {
       }
     }
 
+    const verdicts = { high: 0, ok: 0, check: 0 };
+    for (const h of hits) verdicts[h.match.verdict.level]++;
     return {
-      candidates: hits.length, excluded, total: postings.length, newCount, aiStatus,
+      candidates: hits.length, excluded, total: postings.length, newCount, aiStatus, verdicts,
       guard: solicitationGuard(seekerId),
       nearMisses: nearMisses.slice(0, 20).map(n => ({
         posting_id: n.posting.id, posting_no: n.posting.posting_no, company_name: n.posting.company_name,

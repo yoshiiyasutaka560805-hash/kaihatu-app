@@ -3,6 +3,9 @@
 // 承認待ちの下書き：受付フォーム（求職者本人入力）・面談メモAI抽出・求人票AI読取
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const { readConditionSheet } = require('../services/conditionSheet');
+const sheetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 } });
 const { getDb, getSettings, audit } = require('../database/db');
 const specs = require('../models/specs');
 const { validate, columnsOf, ah } = require('../utils/validate');
@@ -32,6 +35,26 @@ router.post('/memo', ah(async (req, res) => {
   res.json({ draftId: r.lastInsertRowid, data });
 }));
 
+// 条件表（Excel・Word・PDF）の取込 → 下書き
+//   seeker_id 指定時は既存の求職者を更新、なければ新規登録用
+//   ai_ok=1 は「本人から外部AI利用の同意を得ている」ことを担当者が確認した場合のみ
+router.post('/sheet', sheetUpload.single('file'), ah(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '条件表のファイルを選択してください' });
+  const db = getDb();
+  const seekerId = req.body.seeker_id ? Number(req.body.seeker_id) : null;
+  const seeker = seekerId ? db.prepare('SELECT * FROM job_seekers WHERE id = ? AND deleted_at IS NULL').get(seekerId) : null;
+  if (seekerId && !seeker) return res.status(404).json({ error: '求職者が見つかりません' });
+  const allowAi = seeker ? Boolean(seeker.ai_consent) : req.body.ai_ok === '1';
+  const filename = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+  const r = await readConditionSheet(req.file.buffer, filename, req.file.mimetype,
+    { knownNames: seeker ? [seeker.name, seeker.name_kana] : [], allowAi, seekerId });
+  const payload = { ...r.data, ...(seeker ? {} : { ai_consent: req.body.ai_ok === '1' ? 1 : 0 }) };
+  const ins = db.prepare("INSERT INTO drafts (kind, seeker_id, data, source_name) VALUES ('seeker_sheet', ?, ?, ?)")
+    .run(seekerId, JSON.stringify({ fields: payload, method: r.method, uncertain: r.uncertain }), `条件表：${filename}`);
+  audit('draft_create', ins.lastInsertRowid, { kind: 'seeker_sheet', method: r.method });
+  res.json({ draftId: ins.lastInsertRowid, method: r.method, data: payload, uncertain: r.uncertain, preview: r.preview || null, seeker_id: seekerId });
+}));
+
 router.post('/:id/reject', (req, res) => {
   getDb().prepare("UPDATE drafts SET status = 'rejected', reviewed_at = datetime('now','localtime'), reviewed_by = ? WHERE id = ? AND status = 'pending'")
     .run(currentOperator(), req.params.id);
@@ -56,6 +79,24 @@ router.post('/:id/approve', (req, res) => {
     if (cols.length) db.prepare(`UPDATE job_seekers SET ${cols.map(c => `${c} = @${c}`).join(', ')}, updated_at = datetime('now','localtime') WHERE id = @id`).run({ ...o, id: d.seeker_id });
     resultId = d.seeker_id;
     prohibited = detectProhibited([o.notes, o.experience_note, o.priorities]);
+  } else if (d.kind === 'seeker_sheet') {
+    const fields = data.fields || data;
+    if (d.seeker_id) {
+      const o = validate(fields, specs.seeker);
+      for (const k of ['name', 'status', 'consent_date', 'accepted_date', 'validity_end']) delete o[k];
+      for (const k of Object.keys(o)) if (o[k] == null) delete o[k];
+      const cols = columnsOf(o, specs.seeker);
+      if (cols.length) db.prepare(`UPDATE job_seekers SET ${cols.map(c => `${c} = @${c}`).join(', ')}, updated_at = datetime('now','localtime') WHERE id = @id`).run({ ...o, id: d.seeker_id });
+      resultId = d.seeker_id;
+      prohibited = detectProhibited([o.notes, o.experience_note, o.priorities]);
+    } else {
+      const o = validate(fields, specs.seeker, { required: ['name', 'consent_date'] });
+      o.accepted_date = o.accepted_date || todayJst();
+      o.validity_end = o.validity_end || addMonths(o.accepted_date, Number(getSettings().seeker_validity_months || 3));
+      const cols = columnsOf(o, specs.seeker);
+      resultId = db.prepare(`INSERT INTO job_seekers (${cols.join(',')}) VALUES (${cols.map(c => '@' + c).join(',')})`).run(o).lastInsertRowid;
+      prohibited = detectProhibited([o.notes, o.experience_note, o.priorities]);
+    }
   } else if (d.kind === 'seeker_intake') {
     const o = validate(data, specs.seeker, { required: ['name', 'consent_date'] });
     o.accepted_date = o.accepted_date || todayJst();

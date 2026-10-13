@@ -13,7 +13,7 @@ const { addDays, todayJst } = require('../utils/dates');
 const { ah } = require('../utils/validate');
 const specs = require('../models/specs');
 
-const NUMERIC = { match_min_score: [0, 100], wage_tolerance_percent: [0, 30], ai_top_n: [0, 10], ai_monthly_budget_usd: [0, 10000],
+const NUMERIC = { match_min_score: [0, 100], verdict_high_score: [0, 100], wage_tolerance_percent: [0, 30], ai_top_n: [0, 10], ai_monthly_budget_usd: [0, 10000],
   fee_rate_percent: [0, 100], fee_cap_percent: [0, 100], fee_basis_months: [0, 24], invoice_due_days: [0, 365],
   retention_years: [2, 20], seeker_validity_months: [1, 24], backup_keep: [1, 365] };
 const BOOL = ['ai_enabled', 'provision_enabled', 'tokutei_visiting_allowed'];

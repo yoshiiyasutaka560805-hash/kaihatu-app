@@ -4,6 +4,7 @@
 module.exports = {
   // 判定
   match_min_score: '40',
+  verdict_high_score: '75',            // 「案内可（マッチ度高）」とするスコア
   wage_tolerance_percent: '5',          // 賃金がこの割合以内の不足なら除外せず注意表示
   tokutei_visiting_allowed: '0',        // 特定技能で訪問系業務を判定上「可」とするか（要確認：最新の運用要領）
   // AI
