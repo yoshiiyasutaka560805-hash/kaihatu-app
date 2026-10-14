@@ -25,7 +25,7 @@
 - AI：`@anthropic-ai/sdk`、`services/ai/client.js`。APIキーは `RIANET_ANTHROPIC_API_KEY` または `ANTHROPIC_API_KEY`（PCの環境変数）。送信前に必ず仮名化（`ai/pii.js`）。求職者の AI 利用同意（ai_consent）がなければ送らない。
 - ネット求人検索：web_search/web_fetch ツール＋ `submit_jobs`（`ai/webJobSearch.js`）。
 - HW 求人情報提供サービス Web API：`services/sources/hwApi.js`。URL・タグ・項目対応は設定で可変、承認前は無効。仕様書（マニュアル）を受け取ったら設定値を埋めて実装を詰める。
-- テスト：`cd backend && npm test`（54件。TZ=UTC でも通ること）。
+- テスト：`cd backend && npm test`（53件。TZ=UTC でも通ること）。
 
 ## ヒアリングシート（Google ドキュメント）
 - 「求職者ヒアリングシート（介護・看護職共通）」ID `1FLwYnfMp4WL09FCbbn407YDokmyq5OEpaAFHDoSBdO8`
