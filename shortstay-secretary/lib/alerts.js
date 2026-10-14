@@ -61,7 +61,7 @@ function missingDocuments() {
 
 function todaysPickups(today = todayStr()) {
   const wd = weekdayOf(today);
-  const rows = db.prepare(`SELECT p.*, c.surname_enc, c.given_enc, c.surname_initial, c.address_enc, c.phone_enc, c.wheelchair,
+  const rows = db.prepare(`SELECT p.*, c.surname_enc, c.given_enc, c.surname_initial, c.address_enc, c.phone_enc, c.wheelchair, c.wheelchair_type, c.gait, c.tags, c.vehicle_hint, c.escort_enc, c.attention_enc,
       v.name vehicle_name, v.wheelchair v_wc, d.name driver_name
     FROM pickup_patterns p JOIN clients c ON c.id=p.client_id
     LEFT JOIN vehicles v ON v.id=p.default_vehicle_id LEFT JOIN drivers d ON d.id=p.default_driver_id
@@ -71,9 +71,15 @@ function todaysPickups(today = todayStr()) {
     const warn = [];
     if (r.wheelchair && !r.v_wc) warn.push(r.default_vehicle_id ? '車椅子対応でない車両が指定されています' : '車椅子対応車両が未指定です');
     if (!r.default_driver_id) warn.push('運転手が未指定です');
+    const tags = r.tags ? r.tags.split(',') : [];
+    if (r.vehicle_hint && r.vehicle_name && !r.vehicle_name.includes(r.vehicle_hint)) warn.push(`車種指定は「${r.vehicle_hint}」です`);
+    if (tags.includes('出発前に電話')) warn.push('出発前に電話連絡してください');
+    if (tags.includes('オートロック')) warn.push('オートロックあり（インターホン/待ち合わせを確認）');
+    if (tags.includes('道が狭い')) warn.push('道が狭いです（車両サイズに注意）');
     return { pattern_id: r.id, client_id: r.client_id, client: name, kind: r.kind, time: r.time,
-      wheelchair: !!r.wheelchair, vehicle: r.vehicle_name, driver: r.driver_name, note: r.note, warnings: warn,
-      message: `${r.time} ${name}さん ${r.kind}${r.wheelchair ? '（車椅子）' : ''} 車両:${r.vehicle_name || '未指定'} 運転手:${r.driver_name || '未指定'}` };
+      wheelchair: !!r.wheelchair, wheelchair_type: r.wheelchair_type, gait: r.gait, tags, vehicle_hint: r.vehicle_hint,
+      escort: decrypt(r.escort_enc), attention: decrypt(r.attention_enc), vehicle: r.vehicle_name, driver: r.driver_name, note: r.note, warnings: warn,
+      message: `${r.time} ${name}さん ${r.kind}${r.wheelchair_type ? `（${r.wheelchair_type}）` : r.gait ? `（${r.gait}）` : ''} 車両:${r.vehicle_name || '未指定'} 運転手:${r.driver_name || '未指定'}` };
   });
 }
 

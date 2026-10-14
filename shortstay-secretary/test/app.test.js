@@ -98,3 +98,28 @@ test('端末の無効化・操作ログ・CSV取込', async () => {
   await call('POST', `/admin/users/${uid}/revoke-all`);
   assert.equal((await call('GET', '/me', null, t2)).status, 401); // 紛失端末を無効化
 });
+
+test('歩行状態・注意事項: CSV自由記述から分類し、キーボックス暗証番号は別欄に暗号化', async () => {
+  token = (await call('POST', '/login', { username: 'admin', password: 'correct-horse-1' }, null)).body.token; // 前テストで全端末を無効化済み
+  const csv = '姓,名,姓イニシャル,電話,住所,緊急連絡先,車椅子,歩行状態,注意事項\n' +
+    'テスト,一,T,,東京都A1,,リクライニング車いす,,ヘルパー 道狭い　タント\n' +
+    'テスト,二,T,,東京都A2,,,ご本人シルバーカー,"独居　キーボックス　1234 出発前電話して下で待ち合わせ"\n' +
+    'テスト,三,T,,東京都A3,,本人車椅子,歩行器,歩行器が大きいのでバネットで行く\n' +
+    'テスト,四,T,,東京都A4,,,手引き,\n';
+  const r = (await call('POST', '/import/clients', { csv })).body;
+  assert.equal(r.created, 4, JSON.stringify(r));
+  const list = (await call('GET', '/clients')).body;
+  const get = async (given) => (await call('GET', '/clients/' + list.find((c) => c.name === `テスト ${given}`).id)).body;
+  const a = await get('一'); assert.equal(a.wheelchair_type, 'リクライニング車椅子'); assert.deepEqual(a.tags.sort(), ['ヘルパー立会', '道が狭い']); assert.equal(a.vehicle_hint, 'タント');
+  const b = await get('二'); assert.equal(b.gait, 'シルバーカー'); assert.equal(b.keybox, '1234'); assert.ok(!b.attention.includes('1234'));
+  assert.ok(b.tags.includes('出発前に電話') && b.tags.includes('下で待ち合わせ') && b.tags.includes('キーボックス'));
+  const c = await get('三'); assert.equal(c.vehicle_hint, 'バネット'); assert.equal(c.wheelchair_type, '車椅子');
+  assert.equal((await get('四')).gait, '手引き');
+  assert.ok(!JSON.stringify(db.prepare('SELECT keybox_enc, attention_enc, escort_enc FROM clients WHERE id=?').get(b.id)).includes('1234'));
+});
+test('注意事項に基づく警告: 車種指定・出発前電話・道が狭い', async () => {
+  const cs = db.prepare("SELECT c.*, '09:00' time FROM clients c WHERE surname_initial='T' ORDER BY id").all();
+  const r = await routing.planRoute({ kind: '迎え', vehicle: { name: 'バネット', wheelchair: 1, capacity: 4 }, driver: { name: 'd' }, clients: cs.slice(0, 2) });
+  const w = r.warnings.join('\n');
+  assert.match(w, /車種指定は「タント」/); assert.match(w, /リクライニング/); assert.match(w, /道が狭い/); assert.match(w, /出発前に電話/);
+});

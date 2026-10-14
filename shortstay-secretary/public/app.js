@@ -5,6 +5,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const DAYS = ['日', '月', '火', '水', '木', '金', '土'];
 const LV = { overdue: ['期限切れ', 'b-overdue'], urgent: ['至急', 'b-urgent'], warn: ['要準備', 'b-warn'], missing: ['未登録', 'b-missing'] };
+let OPTS = null;
 const toast = (m) => { const t = $('#toast'); t.textContent = m; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 2500); };
 
 async function api(method, url, body, raw) {
@@ -61,7 +62,9 @@ async function home(app) {
   const d = await api('GET', '/dashboard');
   const todo = d.todo.length ? d.todo.map((t) => `<li>${esc(t)}</li>`).join('') : '<li>至急の対応はありません</li>';
   app.innerHTML = `<h2>今日（${esc(d.date)}）やること</h2><div class="card"><ul>${todo}</ul></div>
-    <h2>今日の送迎（固定）</h2>${d.pickups.map((p) => `<div class="card"><b>${esc(p.time)}</b> ${esc(p.client)}さん ${esc(p.kind)}${p.wheelchair ? ' ♿' : ''}
+    <h2>今日の送迎（固定）</h2>${d.pickups.map((p) => `<div class="card"><b>${esc(p.time)}</b> ${esc(p.client)}さん ${esc(p.kind)}${p.wheelchair ? ' ♿' + esc(p.wheelchair_type) : ''} ${esc(p.gait)}
+      <div>${p.tags.map((t) => `<span class="badge b-warn">${esc(t)}</span>`).join(' ')}</div>
+      <div class="muted">立会: ${esc(p.escort)}　${esc(p.attention)}</div>
       <div class="muted">車両: ${esc(p.vehicle || '未指定')} / 運転手: ${esc(p.driver || '未指定')}</div>
       ${p.warnings.map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join('')}</div>`).join('') || '<div class="card muted">送迎予定はありません</div>'}
     <h2>書類の期限アラート</h2>${d.document_alerts.map((a) => `<div class="card">${badge(a.level)} ${esc(a.message)}</div>`).join('') || '<div class="card muted">期限が近い書類はありません</div>'}
@@ -71,22 +74,33 @@ async function home(app) {
 async function clients(app) {
   const list = await api('GET', '/clients');
   app.innerHTML = `<div class="row"><h2>利用者（${list.length}名）</h2><button class="fit" id="new">＋ 新規登録</button></div>` +
-    list.map((c) => `<div class="card" data-id="${c.id}" style="cursor:pointer">${esc(c.name)} ${c.wheelchair ? '♿' : ''} <span class="muted">（表示用: ${esc(c.masked_name)}）</span></div>`).join('') +
+    list.map((c) => `<div class="card" data-id="${c.id}" style="cursor:pointer">${esc(c.name)} ${c.wheelchair_type ? '♿' + esc(c.wheelchair_type === '車椅子' ? '' : '(リクライニング)') : ''} ${esc(c.gait)} ${c.tags.map((t) => `<span class="badge b-missing">${esc(t)}</span>`).join(' ')} <span class="muted">（表示用: ${esc(c.masked_name)}）</span></div>`).join('') +
     `<div id="detail"></div>`;
   $('#new').onclick = () => clientForm();
   app.querySelectorAll('.card[data-id]').forEach((el) => { el.onclick = guard(() => clientDetail(el.dataset.id)); });
 }
-function clientForm(c = {}) {
+async function clientForm(c = {}) {
+  OPTS = OPTS || await api('GET', '/profile-options');
+  const opt = (list, cur, blank) => `<option value="">${blank}</option>` + list.filter(Boolean).map((x) => `<option ${x === cur ? 'selected' : ''}>${esc(x)}</option>`).join('');
   $('#detail').innerHTML = `<div class="card"><h2>${c.id ? '利用者情報の編集' : '新規登録'}</h2>
     <div class="row"><label>姓<input id="f_s" value="${esc(c.surname)}"></label><label>名<input id="f_g" value="${esc(c.given)}"></label>
     <label>姓のイニシャル（英字・外部共有用）<input id="f_i" value="${esc(c.surname_initial)}" maxlength="2"></label></div>
     <label>電話<input id="f_p" value="${esc(c.phone)}" inputmode="tel"></label><label>住所<input id="f_a" value="${esc(c.address)}"></label>
-    <label>緊急連絡先<input id="f_e" value="${esc(c.emergency)}"></label><label>メモ<textarea id="f_n">${esc(c.note)}</textarea></label>
-    <label><input type="checkbox" id="f_w" ${c.wheelchair ? 'checked' : ''} style="min-height:auto"> 車椅子</label>
+    <label>緊急連絡先<input id="f_e" value="${esc(c.emergency)}"></label>
+    <div class="row"><label>車椅子<select id="f_wt">${opt(OPTS.wheelchair_types, c.wheelchair_type, 'なし')}</select></label>
+    <label>歩行状態<select id="f_gt">${opt(OPTS.gaits, c.gait, '未設定')}</select></label>
+    <label>車種指定<input id="f_vh" value="${esc(c.vehicle_hint)}" placeholder="例: タント / バネット"></label></div>
+    <label>注意タグ</label><div>${OPTS.tags.map((t) => `<label style="display:inline-block;margin-right:12px"><input type="checkbox" name="f_tag" value="${esc(t)}" ${(c.tags || []).includes(t) ? 'checked' : ''} style="min-height:auto"> ${esc(t)}</label>`).join('')}</div>
+    <label>入所・退所時の立会者（例: ヘルパー / 夫 / 息子・LINEあり）<input id="f_es" value="${esc(c.escort)}"></label>
+    <label>注意事項（自由記述）<textarea id="f_at">${esc(c.attention)}</textarea></label>
+    <label>キーボックス暗証番号（暗号化・表示時のみ確認）<input id="f_kb" value="${esc(c.keybox)}" autocomplete="off"></label>
+    <label>メモ<textarea id="f_n">${esc(c.note)}</textarea></label>
     <p><button id="save">保存</button></p></div>`;
   $('#save').onclick = guard(async () => {
     const body = { surname: $('#f_s').value, given: $('#f_g').value, surname_initial: $('#f_i').value, phone: $('#f_p').value,
-      address: $('#f_a').value, emergency: $('#f_e').value, note: $('#f_n').value, wheelchair: $('#f_w').checked };
+      address: $('#f_a').value, emergency: $('#f_e').value, note: $('#f_n').value, wheelchair_type: $('#f_wt').value, gait: $('#f_gt').value,
+      vehicle_hint: $('#f_vh').value, tags: [...document.querySelectorAll('[name=f_tag]:checked')].map((x) => x.value),
+      escort: $('#f_es').value, attention: $('#f_at').value, keybox: $('#f_kb').value };
     if (c.id) await api('PUT', '/clients/' + c.id, body); else await api('POST', '/clients', body);
     toast('保存しました'); go('clients');
   });
@@ -97,6 +111,8 @@ async function clientDetail(id) {
   $('#detail').innerHTML = `<div class="card"><h2>${esc(c.name)}</h2>
     <div>電話: <span class="secret" id="ph">${esc(c.phone)}</span> / 住所: <span class="secret" id="ad">${esc(c.address)}</span>
     <button class="sub fit" id="peek">表示/非表示</button></div><div class="muted">緊急連絡先: ${esc(c.emergency)}　${esc(c.note)}</div>
+    <div>${c.wheelchair_type ? '♿' + esc(c.wheelchair_type) : ''} ${esc(c.gait)} ${c.vehicle_hint ? '車種:' + esc(c.vehicle_hint) : ''} ${c.tags.map((t) => `<span class="badge b-warn">${esc(t)}</span>`).join(' ')}</div>
+    <div class="muted">立会: ${esc(c.escort)}　${esc(c.attention)}${c.keybox ? '　キーボックス: <span class="secret" id="kb">' + esc(c.keybox) + '</span>' : ''}</div>
     <p class="row"><button class="sub fit" id="edit">編集</button><button class="danger fit" id="del">利用終了にする</button></p></div>
     <h2>書類</h2><div class="card"><table><tr><th>種別</th><th>期限</th><th>ファイル</th><th></th></tr>${types.map((t) => {
       const d = byType[t.id]; return `<tr><td>${esc(t.name)}</td><td>${d ? esc(d.expires_on || '-') : '<span class="badge b-missing">未登録</span>'}</td>
@@ -109,7 +125,7 @@ async function clientDetail(id) {
     <select id="pd"><option value="">運転手(既定)</option>${drivers.map((v) => `<option value="${v.id}">${esc(v.name)}</option>`).join('')}</select>
     <button class="fit" id="addp">追加</button></div></div>`;
   $('#detail').scrollIntoView();
-  $('#peek').onclick = () => { $('#ph').classList.toggle('show'); $('#ad').classList.toggle('show'); };
+  $('#peek').onclick = () => { $('#ph').classList.toggle('show'); $('#ad').classList.toggle('show'); $('#kb')?.classList.toggle('show'); };
   $('#edit').onclick = () => clientForm(c);
   $('#del').onclick = guard(async () => { if (confirm('利用終了として一覧から外します。よろしいですか？')) { await api('DELETE', '/clients/' + id); go('clients'); } });
   $('#addp').onclick = guard(async () => { await api('POST', `/clients/${id}/patterns`, { weekday: +$('#pw').value, kind: $('#pk').value, time: $('#pt').value,
@@ -156,7 +172,7 @@ async function transport(app) {
 async function admin(app) {
   if (me.role !== 'admin') { app.innerHTML = `<div class="card"><h2>アカウント</h2><button id="lo">ログアウト</button></div>`; $('#lo').onclick = guard(async () => { await api('POST', '/logout'); logoutLocal(); }); return; }
   const [types, sessions, audit] = await Promise.all([api('GET', '/doc-types'), api('GET', '/admin/sessions'), api('GET', '/admin/audit')]);
-  app.innerHTML = `<h2>CSV取込（姓,名,姓イニシャル,電話,住所,緊急連絡先,車椅子）</h2><div class="card"><textarea id="csv" rows="4" style="width:100%"></textarea>
+  app.innerHTML = `<h2>CSV取込（姓,名,姓イニシャル,電話,住所,緊急連絡先,車椅子,歩行状態,注意事項）</h2><div class="card"><textarea id="csv" rows="4" style="width:100%"></textarea>
     <input type="file" id="csvf" accept=".csv"><button id="imp">取込</button><div id="impout" class="muted"></div></div>
     <h2>書類種別とアラート日数</h2><div class="card">${types.map((t) => `<div class="row"><span>${esc(t.name)}</span><input data-t="${t.id}" value="${esc(t.alert_days)}"><button class="sub fit" data-st="${t.id}">保存</button></div>`).join('')}</div>
     <h2>ログイン端末（紛失時は無効化）</h2><div class="card"><button class="danger" id="rv">自分を含む全端末を無効化</button><table><tr><th>端末</th><th>最終</th><th>状態</th></tr>${sessions.map((s) => `<tr><td>${esc((s.device || '').slice(0, 40))}<br><span class="muted">${esc(s.ip)}</span></td><td>${esc(s.last_seen)}</td><td>${s.revoked ? '無効' : `有効 <button class="sub" data-rv="${s.id}">無効化</button>`}</td></tr>`).join('')}</table></div>

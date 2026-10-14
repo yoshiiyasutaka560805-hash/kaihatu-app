@@ -12,7 +12,7 @@ function validate({ vehicle, driver, clients }) {
   if (!driver) errors.push('運転手を指定してください');
   if (!clients.length) errors.push('利用者を1名以上選択してください');
   if (vehicle && clients.length > Math.min(MAX_RIDERS, vehicle.capacity)) errors.push(`同乗は最大${Math.min(MAX_RIDERS, vehicle.capacity)}名です`);
-  if (vehicle && !vehicle.wheelchair && clients.some((c) => c.wheelchair)) errors.push('車椅子の利用者は車椅子対応車両（バネット等）を指定してください');
+  if (vehicle && !vehicle.wheelchair && clients.some((c) => c.wheelchair || c.wheelchair_type)) errors.push('車椅子の利用者は車椅子対応車両（バネット等）を指定してください');
   return errors;
 }
 
@@ -70,6 +70,16 @@ async function planRoute({ kind, vehicle, driver, clients, fetchRoute = callGoog
     totalMin = Math.round(parseInt(route.duration, 10) / 60);
     if (totalMin > MAX_RIDE_MIN) warnings.push(`所要時間が${totalMin}分です（目安${MAX_RIDE_MIN}分超）。同乗の見直しを検討してください`);
   } else if (!warnings.length) warnings.push('GOOGLE_MAPS_API_KEY未設定のため所要時間は未計算です。下のマップを開いて確認してください');
+  for (const c of clients) { // 利用者ごとの注意事項を、ルート案の警告として表示
+    const who = maskedName(c);
+    const tags = c.tags ? c.tags.split(',') : [];
+    if (c.vehicle_hint && !vehicle.name.includes(c.vehicle_hint)) warnings.push(`${who}: 車種指定は「${c.vehicle_hint}」です`);
+    if (c.wheelchair_type === 'リクライニング車椅子') warnings.push(`${who}: リクライニング車椅子。固定・乗降方法を確認してください`);
+    if (tags.includes('道が狭い') && vehicle.wheelchair && vehicle.capacity > 3) warnings.push(`${who}: 道が狭いため大型車の進入可否を確認してください`);
+    if (tags.includes('出発前に電話')) warnings.push(`${who}: 出発前に電話連絡`);
+    if (tags.includes('オートロック')) warnings.push(`${who}: オートロック（待ち合わせ方法を確認）`);
+    if (tags.includes('要添乗')) warnings.push(`${who}: 添乗が必要（同乗者を確保）`);
+  }
   if (clients.length > 1) {
     const times = clients.map((c) => c.time).sort();
     warnings.push(`同乗${clients.length}名: 希望時刻は ${times[0]}〜${times[times.length - 1]}。時間に無理がないか最終確認してください（アプリは候補提示のみ）`);

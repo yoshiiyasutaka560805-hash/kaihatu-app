@@ -8,6 +8,7 @@ const { encrypt, decrypt, encryptBuffer, decryptBuffer, DATA_DIR } = require('./
 const auth = require('./lib/auth');
 const alerts = require('./lib/alerts');
 const routing = require('./lib/routing');
+const profile = require('./lib/profile');
 
 const app = express();
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
@@ -78,7 +79,9 @@ api.get('/dashboard', (req, res) => {
 // ---- 利用者台帳 ----
 const clientOut = (c, full = true) => ({
   id: c.id, name: alerts.displayName(c), surname_initial: c.surname_initial, masked_name: alerts.maskedName(c),
-  wheelchair: !!c.wheelchair, active: !!c.active,
+  wheelchair: !!c.wheelchair, wheelchair_type: c.wheelchair_type, gait: c.gait, tags: c.tags ? c.tags.split(',') : [],
+  vehicle_hint: c.vehicle_hint, active: !!c.active,
+  ...(full ? { escort: decrypt(c.escort_enc), attention: decrypt(c.attention_enc), keybox: decrypt(c.keybox_enc) } : {}),
   ...(full ? { surname: decrypt(c.surname_enc), given: decrypt(c.given_enc), phone: decrypt(c.phone_enc),
     address: decrypt(c.address_enc), emergency: decrypt(c.emergency_enc), note: decrypt(c.note_enc) } : {}),
 });
@@ -98,15 +101,22 @@ api.get('/clients/:id', (req, res) => {
   });
 });
 function saveClient(body, id) {
-  const { surname, given, surname_initial, phone, address, emergency, note, wheelchair } = body || {};
+  const { surname, given, surname_initial, phone, address, emergency, note, gait, escort, attention, keybox, vehicle_hint } = body || {};
   if (!surname || !given) throw new Error('姓と名は必須です');
   const ini = (surname_initial || '').trim().slice(0, 2).toUpperCase();
   if (!/^[A-Z]{1,2}$/.test(ini)) throw new Error('姓のイニシャルは英字1〜2文字で入力してください（例: Y）');
-  const vals = [encrypt(surname), encrypt(given), ini, encrypt(phone), encrypt(address), encrypt(emergency), encrypt(note), wheelchair ? 1 : 0];
-  if (id) { db.prepare(`UPDATE clients SET surname_enc=?, given_enc=?, surname_initial=?, phone_enc=?, address_enc=?,
-      emergency_enc=?, note_enc=?, wheelchair=? WHERE id=?`).run(...vals, id); return Number(id); }
-  return Number(db.prepare(`INSERT INTO clients (surname_enc, given_enc, surname_initial, phone_enc, address_enc,
-      emergency_enc, note_enc, wheelchair) VALUES (?,?,?,?,?,?,?,?)`).run(...vals).lastInsertRowid);
+  // 車椅子: 種別が正。旧形式(wheelchair: true)は「車椅子」とみなす
+  const wt = body.wheelchair_type !== undefined ? body.wheelchair_type : (body.wheelchair ? '車椅子' : '');
+  if (!profile.WHEELCHAIR_TYPES.includes(wt)) throw new Error('車椅子の種別が不正です');
+  if (gait && !profile.GAITS.includes(gait)) throw new Error('歩行状態が不正です');
+  const tags = profile.normTags(body.tags).join(',');
+  const vals = [encrypt(surname), encrypt(given), ini, encrypt(phone), encrypt(address), encrypt(emergency), encrypt(note), wt ? 1 : 0,
+    wt, gait || '', tags, String(vehicle_hint || '').slice(0, 20), encrypt(escort), encrypt(attention), encrypt(keybox)];
+  const cols = `surname_enc=?, given_enc=?, surname_initial=?, phone_enc=?, address_enc=?, emergency_enc=?, note_enc=?, wheelchair=?,
+    wheelchair_type=?, gait=?, tags=?, vehicle_hint=?, escort_enc=?, attention_enc=?, keybox_enc=?`;
+  if (id) { db.prepare(`UPDATE clients SET ${cols} WHERE id=?`).run(...vals, id); return Number(id); }
+  return Number(db.prepare(`INSERT INTO clients (surname_enc, given_enc, surname_initial, phone_enc, address_enc, emergency_enc, note_enc, wheelchair,
+    wheelchair_type, gait, tags, vehicle_hint, escort_enc, attention_enc, keybox_enc) VALUES (${vals.map(() => '?').join(',')})`).run(...vals).lastInsertRowid);
 }
 api.post('/clients', (req, res) => {
   try { const id = saveClient(req.body); req.audit('create_client', String(id)); res.json({ id }); }
@@ -172,6 +182,7 @@ api.post('/transport/plan', wrap(async (req, res) => {
 }));
 
 // ---- 書類 ----
+api.get('/profile-options', (req, res) => res.json({ gaits: profile.GAITS, wheelchair_types: profile.WHEELCHAIR_TYPES, tags: profile.TAG_NAMES }));
 api.get('/doc-types', (req, res) => res.json(db.prepare('SELECT * FROM doc_types ORDER BY id').all()));
 api.put('/doc-types/:id', auth.requireAdmin, (req, res) => {
   const days = String(req.body?.alert_days || '').split(',').map((s) => parseInt(s, 10)).filter((n) => n > 0 && n <= 365);
@@ -214,7 +225,7 @@ api.get('/documents/:id/file', (req, res) => {
   res.set('Content-Disposition', 'inline'); res.send(buf);
 });
 
-// ---- CSV取込（姓,名,姓イニシャル,電話,住所,緊急連絡先,車椅子） ----
+// ---- CSV取込（姓,名,姓イニシャル,電話,住所,緊急連絡先,車椅子,歩行状態,注意事項） ----
 function parseCsv(text) {
   const rows = []; let row = []; let cell = ''; let q = false;
   for (let i = 0; i < text.length; i++) {
@@ -234,10 +245,14 @@ api.post('/import/clients', (req, res) => {
   const existing = new Set(db.prepare('SELECT surname_enc, given_enc FROM clients').all().map((c) => decrypt(c.surname_enc) + '|' + decrypt(c.given_enc)));
   let created = 0; const skipped = []; const errors = [];
   rows.slice(1).forEach((r, i) => {
-    const [surname, given, ini, phone, address, emergency, wc] = r.map((x) => x.trim());
+    const [surname, given, ini, phone, address, emergency, wc, gaitText, attText] = r.map((x) => x.trim());
     try {
       if (existing.has(`${surname}|${given}`)) { skipped.push(`${i + 2}行目: 重複のためスキップ`); return; }
-      saveClient({ surname, given, surname_initial: ini, phone, address, emergency, wheelchair: ['1', '○', '有', 'はい'].includes(wc) });
+      const a = profile.parseAttention(attText);
+      const wt = profile.parseWheelchair(wc) || (['1', '○', '有', 'はい'].includes(wc) ? '車椅子' : '');
+      saveClient({ surname, given, surname_initial: ini, phone, address, emergency, wheelchair_type: wt,
+        gait: profile.parseGait(gaitText) || profile.parseGait(wc), attention: a.attention, tags: a.tags,
+        vehicle_hint: a.vehicle_hint, keybox: a.keybox });
       existing.add(`${surname}|${given}`); created++;
     } catch (e) { errors.push(`${i + 2}行目: ${e.message}`); }
   });

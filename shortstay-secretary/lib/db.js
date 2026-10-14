@@ -46,6 +46,18 @@ CREATE TABLE IF NOT EXISTS transport_plans (
   result_json TEXT NOT NULL, created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')));
 `);
 
+// 既存DBへの列追加（歩行状態・注意事項など）
+const have = new Set(db.prepare('PRAGMA table_info(clients)').all().map((c) => c.name));
+for (const [col, ddl] of [
+  ['wheelchair_type', "TEXT NOT NULL DEFAULT ''"],      // '' | '車椅子' | 'リクライニング車椅子'
+  ['gait', "TEXT NOT NULL DEFAULT ''"],                 // 独歩/歩行/杖/シルバーカー/歩行器/手引き/片手引き
+  ['tags', "TEXT NOT NULL DEFAULT ''"],                 // カンマ区切りの標準注意タグ
+  ['vehicle_hint', "TEXT NOT NULL DEFAULT ''"],         // 車種指定（例: タント / バネット）
+  ['escort_enc', 'TEXT'],                               // 入所・退所時の立会者（ヘルパー/夫/息子 等）
+  ['attention_enc', 'TEXT'],                            // 注意事項（自由記述）
+  ['keybox_enc', 'TEXT'],                               // キーボックス暗証番号（別欄で暗号化）
+]) if (!have.has(col)) db.exec(`ALTER TABLE clients ADD COLUMN ${col} ${ddl}`);
+
 const seedTypes = [
   ['契約書', '90,60,30,14,7', 1, 1], ['重要事項説明書', '90,60,30,14,7', 1, 1],
   ['計画書（居宅/施設サービス計画）', '60,30,14,7', 1, 1], ['負担限度額認定証', '90,60,30,14,7', 1, 1],
