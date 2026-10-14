@@ -16,11 +16,29 @@ const PRICING = {
   'claude-opus-5-5': [4, 20], 'claude-sonnet-5-5': [2, 10], 'claude-haiku-5-5': [0.1, 0.5], 'claude-fable-5-1': [10, 50],
 };
 
+// APIキーの読込元
+//   RIANET_ANTHROPIC_API_KEY … 推奨。クラウド作業環境では ANTHROPIC_ で始まる変数が Claude 自身の設定と衝突し反映されないことがあるため
+//   ANTHROPIC_API_KEY        … 事務所PCなど通常の環境ではこちらでも可
+// 接続先は RIANET_ANTHROPIC_BASE_URL（任意）→ 既定 https://api.anthropic.com。
+//   ※ RIANET_ キー使用時は、環境に設定された ANTHROPIC_BASE_URL（他用途のプロキシ等）を使わない
+const DEFAULT_BASE_URL = 'https://api.anthropic.com';
+
+function apiKey() {
+  return process.env.RIANET_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || null;
+}
+
+function newClient(timeout) {
+  const own = process.env.RIANET_ANTHROPIC_API_KEY;
+  const opts = { timeout, maxRetries: 2 };
+  if (own) Object.assign(opts, { apiKey: own, baseURL: process.env.RIANET_ANTHROPIC_BASE_URL || DEFAULT_BASE_URL });
+  return new Anthropic(opts);
+}
+
 let injectedClient = null;
 function setClientForTest(c) { injectedClient = c; }
 
 function isAvailable() {
-  return Boolean(injectedClient || process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  return Boolean(injectedClient || apiKey() || process.env.ANTHROPIC_AUTH_TOKEN);
 }
 
 function monthSpent() {
@@ -38,7 +56,7 @@ class AiUnavailableError extends Error { constructor(m) { super(m); this.status 
 function ensureUsable() {
   const s = getSettings();
   if (s.ai_enabled !== '1') throw new AiUnavailableError('AI機能は設定で無効です');
-  if (!isAvailable()) throw new AiUnavailableError('APIキー（ANTHROPIC_API_KEY）が未設定です');
+  if (!isAvailable()) throw new AiUnavailableError('APIキー（RIANET_ANTHROPIC_API_KEY または ANTHROPIC_API_KEY）が未設定です');
   const budget = Number(s.ai_monthly_budget_usd || 0);
   if (budget > 0 && monthSpent() >= budget) throw new AiUnavailableError(`今月のAI利用額が予算（$${budget}）に達しました`);
 }
@@ -60,7 +78,7 @@ async function callStructured(o) {
     db.prepare(`UPDATE ai_requests SET ${cols.map(c => `${c} = @${c}`).join(', ')} WHERE id = @id`).run({ ...fields, id: req.lastInsertRowid });
   };
 
-  const client = injectedClient || new Anthropic({ timeout: 120000, maxRetries: 2 });
+  const client = injectedClient || newClient(120000);
   let response;
   try {
     response = await client.beta.messages.create({
@@ -106,7 +124,7 @@ async function callWithTools(o) {
     .run(status, error, totals.input_tokens, totals.output_tokens,
       cost(MODEL, totals) + totals.searches * 0.01, req.lastInsertRowid);
 
-  const client = injectedClient || new Anthropic({ timeout: 300000, maxRetries: 2 });
+  const client = injectedClient || newClient(300000);
   const messages = [{ role: 'user', content: o.content }];
   const tools = [...o.serverTools, { name: o.submitTool.name, description: o.submitTool.description, strict: true, input_schema: o.submitTool.schema }];
   let nudged = false;

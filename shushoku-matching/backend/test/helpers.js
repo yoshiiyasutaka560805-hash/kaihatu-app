@@ -5,6 +5,7 @@ process.env.MATCHING_DB_PATH = ':memory:';
 process.env.TZ = process.env.TZ || 'Asia/Tokyo';
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ANTHROPIC_AUTH_TOKEN;
+delete process.env.RIANET_ANTHROPIC_API_KEY;
 delete process.env.BACKUP_PASSWORD;
 
 const http = require('node:http');

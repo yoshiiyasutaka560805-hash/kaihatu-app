@@ -22,7 +22,7 @@ cd frontend && npm ci && npm run build
 ### 環境変数（任意）
 | 変数 | 用途 | 未設定時 |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | AI補足・面談メモ抽出・提案書翻訳・求人票読取 | AI機能なしで動作 |
+| `ANTHROPIC_API_KEY`（または `RIANET_ANTHROPIC_API_KEY`） | AI補足・面談メモ抽出・提案書翻訳・求人票読取・ネット求人検索。Claude Code のクラウド環境では `ANTHROPIC_` で始まる変数が反映されないため `RIANET_ANTHROPIC_API_KEY` を使う | AI機能なしで動作 |
 | `CLAUDE_MODEL` | AIモデル（既定 `claude-opus-5-5`） | 既定 |
 | `BACKUP_PASSWORD` | バックアップの暗号化キー（**紛失すると復元不可**） | ローカルに平文で保存（外部媒体へは不可） |
 | `GOOGLE_MAPS_API_KEY` | 通勤時間の自動計算 | 手入力 |
