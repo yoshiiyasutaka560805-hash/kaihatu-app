@@ -23,6 +23,13 @@ const MIGRATIONS = [
     ];
     for (const c of cols) db.exec(`ALTER TABLE job_seekers ADD COLUMN ${c}`);
   },
+  // v3：事業者情報を許可証どおりの表記に（利用者が変更していない初期値だけを置き換える）
+  db => {
+    const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_settings'").get();
+    if (!exists) return;
+    db.prepare("UPDATE app_settings SET value = '株式会社Lienet' WHERE key = 'company_name' AND value = '株式会社リアネット'").run();
+    db.prepare("UPDATE app_settings SET value = '13-ユ-318908' WHERE key = 'license_no' AND value = ''").run();
+  },
 ];
 
 let _db = null;

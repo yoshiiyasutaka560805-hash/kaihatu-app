@@ -225,7 +225,7 @@ export default function Reports() {
       <div className="no-print"><LedgerCard fy={fy} /></div>
 
       <div className="print-area">
-        <h2 className="print-only" style={{ display: 'none' }}>株式会社リアネット 集計 {fyLabel(fy)}</h2>
+        <h2 className="print-only" style={{ display: 'none' }}>株式会社Lienet 集計 {fyLabel(fy)}</h2>
         <BusinessCard fy={fy} />
         <DisclosureCard fy={fy} />
         <PipelineCard fy={fy} />

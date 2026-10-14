@@ -208,6 +208,10 @@ test('職員ログイン：未ログインは401、受付フォームは公開�
   const h = { 'X-Rianet-App': '1', 'Content-Type': 'application/json' };
   assert.equal((await fetch(`${b}/api/seekers`, { headers: h })).status, 401);
   assert.equal((await fetch(`${b}/api/intake`, { method: 'POST', headers: h, body: JSON.stringify({ name: 'x', consent: true }) })).status, 200);
+  const info = await (await fetch(`${b}/api/intake/info`, { headers: h })).json();
+  assert.equal(info.license_no, '13-ユ-318908');
+  assert.equal(info.company_name, '株式会社Lienet');
+  assert.ok(!('operators' in info) && !('ai_monthly_budget_usd' in info));
   const st = await (await fetch(`${b}/api/auth/status`, { headers: h })).json();
   assert.deepEqual(st, { setup: true, loggedIn: false });
   assert.equal((await fetch(`${b}/api/auth/setup`, { method: 'POST', headers: h, body: JSON.stringify({ password: 'another-pass' }) })).status, 409);

@@ -60,7 +60,8 @@ async function createProposal(seekerId, matchIds, language = 'ja', overrideReaso
     content = { language, labels: t.labels, items: t.items, note: t.note, original: { labels: LABELS, items } };
   }
   const settings = getSettings();
-  content.header = { company: settings.company_name, license_no: settings.license_no, date: todayJst() };
+  content.header = { company: settings.company_name, license_no: settings.license_no, date: todayJst(),
+    contact: [settings.contact_person, settings.contact_tel, settings.contact_email].filter(Boolean).join('／') };
   content.warnings = hwOnly.length
     ? [`自社受理前のハローワーク求人が${hwOnly.length}件含まれます（${hwOnly.map(r => r.posting_no).join('、')}）。紹介前に求人者へ連絡し自社求人として受理してください`]
     : [];

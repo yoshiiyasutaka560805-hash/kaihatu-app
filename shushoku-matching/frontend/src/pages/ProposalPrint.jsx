@@ -154,6 +154,7 @@ export default function ProposalPrint() {
         <div className="pp-meta">
           <div style={{ fontWeight: 700, fontSize: 13 }}>{header.company || ''}</div>
           {header.license_no && <div>有料職業紹介事業 許可番号 {header.license_no}</div>}
+          {header.contact && <div>お問い合わせ・苦情 {header.contact}</div>}
           <div>作成日 {header.date || (data.created_at || '').slice(0, 10)}</div>
         </div>
       </header>

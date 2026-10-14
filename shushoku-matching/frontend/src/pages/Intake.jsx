@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { post } from '../api/client';
+import { get, post } from '../api/client';
 
 // 求職者本人が事務所のPC・タブレットで入力する受付フォーム（サイドメニューなし・多言語）
 // ・送信内容は承認待ちの下書きになり、担当者が確認して登録する（POST /intake）
@@ -105,26 +105,31 @@ const T = {
   choose: ['選んでください', 'えらんで ください', 'Please select', 'Vui lòng chọn', 'Silakan pilih', 'छान्नुहोस्', 'ရွေးပါ', '请选择'],
 
   consent_text: [
-    '株式会社リアネット（有料職業紹介事業者）は、ご記入いただいた個人情報を、職業紹介（求人の紹介、応募・面接の連絡、就職後のフォロー）のために利用します。求人者（介護施設等）へ紹介するときは、紹介に必要な範囲でのみ提供します。法令に基づく場合を除き、ご本人の同意なく他の目的に利用したり、第三者に提供したりしません。記録は法令に従って保存し、保存期間が過ぎた後に削除します。',
-    'リアネットは、あなたの じょうほう（なまえ・れんらくさき など）を、しごとを しょうかいする ために つかいます。はたらく ところ（しせつ）に しょうかいする ときは、ひつような じょうほうだけ わたします。ほかの ことには つかいません。ほかの ひとにも わたしません（ほうりつで きまっている ときを のぞきます）。きまった きかんが すぎたら けします。',
-    'Rianet Co., Ltd. (a licensed private employment agency) will use the personal information you enter for job placement services (introducing job openings, contacting you about applications and interviews, and follow-up after you start work). When introducing you to an employer (such as a care facility), we will share only the information needed for the introduction. Except where required by law, we will not use your information for other purposes or give it to third parties without your consent. Records are kept as required by law and deleted after the retention period.',
-    'Công ty Rianet (doanh nghiệp giới thiệu việc làm có phí được cấp phép) sẽ sử dụng thông tin cá nhân bạn nhập vào cho mục đích giới thiệu việc làm (giới thiệu việc làm, liên lạc về ứng tuyển và phỏng vấn, hỗ trợ sau khi bắt đầu làm việc). Khi giới thiệu bạn cho nhà tuyển dụng (như cơ sở chăm sóc), chúng tôi chỉ cung cấp những thông tin cần thiết cho việc giới thiệu. Trừ trường hợp theo quy định của pháp luật, chúng tôi sẽ không sử dụng cho mục đích khác hoặc cung cấp cho bên thứ ba khi chưa có sự đồng ý của bạn. Hồ sơ được lưu trữ theo quy định của pháp luật và sẽ bị xóa sau khi hết thời hạn lưu trữ.',
-    'Rianet Co., Ltd. (agen penempatan kerja berbayar yang berizin) akan menggunakan informasi pribadi yang Anda isi untuk layanan penempatan kerja (memperkenalkan lowongan, menghubungi Anda terkait lamaran dan wawancara, serta tindak lanjut setelah mulai bekerja). Saat memperkenalkan Anda kepada pemberi kerja (seperti fasilitas perawatan), kami hanya memberikan informasi yang diperlukan untuk perkenalan tersebut. Kecuali diwajibkan oleh hukum, kami tidak akan menggunakannya untuk tujuan lain atau memberikannya kepada pihak ketiga tanpa persetujuan Anda. Data disimpan sesuai ketentuan hukum dan dihapus setelah masa penyimpanan berakhir.',
-    'Rianet Co., Ltd. (इजाजतप्राप्त सशुल्क रोजगार सेवा प्रदायक) ले तपाईंले भर्नुभएको व्यक्तिगत जानकारी रोजगार सेवा (कामको परिचय, आवेदन र अन्तर्वार्ताबारे सम्पर्क, काम सुरु गरेपछिको सहयोग) का लागि प्रयोग गर्नेछ। रोजगारदाता (हेरचाह केन्द्र आदि) लाई परिचय गराउँदा परिचयका लागि आवश्यक जानकारी मात्र दिइनेछ। कानुनले तोकेको अवस्थाबाहेक, तपाईंको सहमतिबिना अन्य उद्देश्यमा प्रयोग गरिने वा तेस्रो पक्षलाई दिइने छैन। अभिलेख कानुनअनुसार राखिन्छ र राख्ने अवधि सकिएपछि मेटाइन्छ।',
-    'Rianet Co., Ltd. (လိုင်စင်ရ အခကြေးငွေယူ အလုပ်အကိုင်ရှာဖွေရေး လုပ်ငန်း) သည် သင်ဖြည့်သွင်းသော ကိုယ်ရေးအချက်အလက်များကို အလုပ်အကိုင် မိတ်ဆက်ပေးခြင်း (အလုပ်ခေါ်စာများ မိတ်ဆက်ခြင်း၊ လျှောက်ထားမှုနှင့် အင်တာဗျူးအတွက် ဆက်သွယ်ခြင်း၊ အလုပ်စတင်ပြီးနောက် ကူညီခြင်း) အတွက် အသုံးပြုပါမည်။ အလုပ်ရှင် (စောင့်ရှောက်ရေးဌာန စသည်) ထံ မိတ်ဆက်ပေးသည့်အခါ မိတ်ဆက်ရန် လိုအပ်သော အချက်အလက်များကိုသာ ပေးပါမည်။ ဥပဒေအရ လိုအပ်သည့်အခါမှအပ သင့်သဘောတူညီချက်မရှိဘဲ အခြားရည်ရွယ်ချက်များအတွက် အသုံးမပြုပါ၊ တတိယပုဂ္ဂိုလ်ထံ မပေးပါ။ မှတ်တမ်းများကို ဥပဒေအတိုင်း သိမ်းဆည်းပြီး သိမ်းဆည်းချိန် ကုန်ဆုံးပါက ဖျက်ပစ်ပါမည်။',
-    '株式会社リアネット（有偿职业介绍机构）将把您填写的个人信息用于职业介绍（介绍招聘信息、联系应聘和面试事宜、入职后的跟进）。向招聘方（护理机构等）介绍您时，仅在介绍所需的范围内提供信息。除法律规定的情况外，未经您同意，不会用于其他目的，也不会提供给第三方。记录将依法保存，保存期满后删除。',
+    '株式会社Lienet（リアネット・有料職業紹介事業者）は、ご記入いただいた個人情報を、職業紹介（求人の紹介、応募・面接の連絡、就職後のフォロー）のために利用します。求人者（介護施設等）へ紹介するときは、紹介に必要な範囲でのみ提供します。法令に基づく場合を除き、ご本人の同意なく他の目的に利用したり、第三者に提供したりしません。記録は紹介が終わってから2年間保存し、その後削除します。',
+    'Lienet（リアネット）は、あなたの じょうほう（なまえ・れんらくさき など）を、しごとを しょうかいする ために つかいます。はたらく ところ（しせつ）に しょうかいする ときは、ひつような じょうほうだけ わたします。ほかの ことには つかいません。ほかの ひとにも わたしません（ほうりつで きまっている ときを のぞきます）。しょうかいが おわってから 2ねん たったら けします。',
+    'Lienet Co., Ltd. (a licensed private employment agency) will use the personal information you enter for job placement services (introducing job openings, contacting you about applications and interviews, and follow-up after you start work). When introducing you to an employer (such as a care facility), we will share only the information needed for the introduction. Except where required by law, we will not use your information for other purposes or give it to third parties without your consent. Records are kept for 2 years after the placement service ends and are then deleted.',
+    'Công ty Lienet (doanh nghiệp giới thiệu việc làm có phí được cấp phép) sẽ sử dụng thông tin cá nhân bạn nhập vào cho mục đích giới thiệu việc làm (giới thiệu việc làm, liên lạc về ứng tuyển và phỏng vấn, hỗ trợ sau khi bắt đầu làm việc). Khi giới thiệu bạn cho nhà tuyển dụng (như cơ sở chăm sóc), chúng tôi chỉ cung cấp những thông tin cần thiết cho việc giới thiệu. Trừ trường hợp theo quy định của pháp luật, chúng tôi sẽ không sử dụng cho mục đích khác hoặc cung cấp cho bên thứ ba khi chưa có sự đồng ý của bạn. Hồ sơ được lưu trữ trong 2 năm sau khi kết thúc việc giới thiệu và sau đó sẽ bị xóa.',
+    'Lienet Co., Ltd. (agen penempatan kerja berbayar yang berizin) akan menggunakan informasi pribadi yang Anda isi untuk layanan penempatan kerja (memperkenalkan lowongan, menghubungi Anda terkait lamaran dan wawancara, serta tindak lanjut setelah mulai bekerja). Saat memperkenalkan Anda kepada pemberi kerja (seperti fasilitas perawatan), kami hanya memberikan informasi yang diperlukan untuk perkenalan tersebut. Kecuali diwajibkan oleh hukum, kami tidak akan menggunakannya untuk tujuan lain atau memberikannya kepada pihak ketiga tanpa persetujuan Anda. Data disimpan selama 2 tahun setelah layanan penempatan selesai, lalu dihapus.',
+    'Lienet Co., Ltd. (इजाजतप्राप्त सशुल्क रोजगार सेवा प्रदायक) ले तपाईंले भर्नुभएको व्यक्तिगत जानकारी रोजगार सेवा (कामको परिचय, आवेदन र अन्तर्वार्ताबारे सम्पर्क, काम सुरु गरेपछिको सहयोग) का लागि प्रयोग गर्नेछ। रोजगारदाता (हेरचाह केन्द्र आदि) लाई परिचय गराउँदा परिचयका लागि आवश्यक जानकारी मात्र दिइनेछ। कानुनले तोकेको अवस्थाबाहेक, तपाईंको सहमतिबिना अन्य उद्देश्यमा प्रयोग गरिने वा तेस्रो पक्षलाई दिइने छैन। अभिलेख रोजगार सेवा सकिएपछि २ वर्षसम्म राखिन्छ र त्यसपछि मेटाइन्छ।',
+    'Lienet Co., Ltd. (လိုင်စင်ရ အခကြေးငွေယူ အလုပ်အကိုင်ရှာဖွေရေး လုပ်ငန်း) သည် သင်ဖြည့်သွင်းသော ကိုယ်ရေးအချက်အလက်များကို အလုပ်အကိုင် မိတ်ဆက်ပေးခြင်း (အလုပ်ခေါ်စာများ မိတ်ဆက်ခြင်း၊ လျှောက်ထားမှုနှင့် အင်တာဗျူးအတွက် ဆက်သွယ်ခြင်း၊ အလုပ်စတင်ပြီးနောက် ကူညီခြင်း) အတွက် အသုံးပြုပါမည်။ အလုပ်ရှင် (စောင့်ရှောက်ရေးဌာန စသည်) ထံ မိတ်ဆက်ပေးသည့်အခါ မိတ်ဆက်ရန် လိုအပ်သော အချက်အလက်များကိုသာ ပေးပါမည်။ ဥပဒေအရ လိုအပ်သည့်အခါမှအပ သင့်သဘောတူညီချက်မရှိဘဲ အခြားရည်ရွယ်ချက်များအတွက် အသုံးမပြုပါ၊ တတိယပုဂ္ဂိုလ်ထံ မပေးပါ။ မှတ်တမ်းများကို အလုပ်မိတ်ဆက်ပေးခြင်း ပြီးဆုံးပြီးနောက် ၂ နှစ်ကြာ သိမ်းဆည်းပြီး ထို့နောက် ဖျက်ပစ်ပါမည်။',
+    '株式会社Lienet（有偿职业介绍机构）将把您填写的个人信息用于职业介绍（介绍招聘信息、联系应聘和面试事宜、入职后的跟进）。向招聘方（护理机构等）介绍您时，仅在介绍所需的范围内提供信息。除法律规定的情况外，未经您同意，不会用于其他目的，也不会提供给第三方。记录将在职业介绍结束后保存2年，之后删除。',
   ],
+  agency_title: ['職業紹介事業者', 'しょうかいする かいしゃ', 'About our employment agency', 'Về doanh nghiệp giới thiệu việc làm', 'Tentang agen penempatan kerja', 'रोजगार सेवा प्रदायकबारे', 'အလုပ်အကိုင်ရှာဖွေရေး လုပ်ငန်းအကြောင်း', '关于职业介绍机构'],
+  license_label: ['有料職業紹介事業 許可番号', 'きょか ばんごう', 'Employment agency license No.', 'Số giấy phép giới thiệu việc làm', 'Nomor izin agen penempatan kerja', 'रोजगार सेवा अनुमति नम्बर', 'လိုင်စင်အမှတ်', '职业介绍事业许可编号'],
+  scope_label: ['取扱職種の範囲', 'しょうかいする しごと', 'Occupations handled', 'Ngành nghề giới thiệu', 'Jenis pekerjaan yang ditangani', 'सेवा दिइने पेशा', 'မိတ်ဆက်ပေးသော အလုပ်အမျိုးအစား', '经营职业范围'],
+  fee_free: ['求職者の方から手数料はいただきません。', 'おかねは かかりません。', 'There is no fee for job seekers.', 'Người tìm việc không phải trả bất kỳ khoản phí nào.', 'Pencari kerja tidak dikenakan biaya apa pun.', 'रोजगार खोज्नेबाट कुनै शुल्क लिइँदैन।', 'အလုပ်ရှာဖွေသူများထံမှ အခကြေးငွေ မယူပါ။', '求职者无需支付任何费用。'],
+  contact_label: ['お問い合わせ・苦情・個人情報の開示等の申出先', 'しつもん・こまった ときの れんらくさき', 'Contact for questions, complaints and requests about your personal information', 'Liên hệ khi có thắc mắc, khiếu nại hoặc yêu cầu về thông tin cá nhân', 'Kontak untuk pertanyaan, keluhan, dan permintaan terkait informasi pribadi', 'प्रश्न, गुनासो र व्यक्तिगत जानकारीसम्बन्धी अनुरोधका लागि सम्पर्क', 'မေးမြန်းရန်၊ တိုင်ကြားရန်နှင့် ကိုယ်ရေးအချက်အလက်ဆိုင်ရာ တောင်းဆိုရန် ဆက်သွယ်ရန်', '咨询、投诉及个人信息相关请求的联系方式'],
   consent_check: ['上記の個人情報の取扱いに同意します', 'わかりました。どうい します', 'I agree to the handling of my personal information described above.', 'Tôi đồng ý với việc xử lý thông tin cá nhân như trên.', 'Saya menyetujui penanganan informasi pribadi saya seperti di atas.', 'म माथि उल्लेखित व्यक्तिगत जानकारीको प्रयोगमा सहमत छु।', 'အထက်ပါ ကိုယ်ရေးအချက်အလက် ကိုင်တွယ်ပုံကို သဘောတူပါသည်။', '我同意上述个人信息的处理方式。'],
   ai_title: ['AIの利用（任意）', 'AI（コンピューター）を つかうこと（えらばなくても いいです）', 'Use of AI (optional)', 'Sử dụng AI (không bắt buộc)', 'Penggunaan AI (opsional)', 'AI को प्रयोग (ऐच्छिक)', 'AI အသုံးပြုခြင်း (မဖြစ်မနေ မဟုတ်ပါ)', 'AI的使用（可选）'],
   ai_check: [
-    '氏名・連絡先を除いた情報（希望条件・資格・経験など）を外部のAIサービスで分析し、求人の提案に利用することに同意します。同意しなくても職業紹介は受けられます。',
-    'なまえ・でんわ・メール・じゅうしょ いがいの じょうほう（きぼう・しかく・けいけん）を、AI（コンピューター）で しらべて、あなたに あう しごとを さがす ために つかいます。どうい しなくても、しごとの しょうかいは うけられます。',
-    'I agree that information other than my name and contact details (job preferences, qualifications, experience, etc.) may be analyzed using an external AI service to suggest suitable jobs. You can still receive job placement services if you do not agree.',
-    'Tôi đồng ý để thông tin của tôi, ngoại trừ họ tên và thông tin liên lạc (nguyện vọng, bằng cấp, kinh nghiệm, v.v.), được phân tích bằng dịch vụ AI bên ngoài nhằm đề xuất công việc phù hợp. Nếu không đồng ý, bạn vẫn được giới thiệu việc làm.',
-    'Saya setuju informasi saya selain nama dan kontak (keinginan kerja, kualifikasi, pengalaman, dll.) dianalisis menggunakan layanan AI eksternal untuk menyarankan lowongan yang sesuai. Jika tidak setuju, Anda tetap dapat menerima layanan penempatan kerja.',
-    'मेरो नाम र सम्पर्क विवरणबाहेकको जानकारी (इच्छा, योग्यता, अनुभव आदि) उपयुक्त काम सुझाउन बाह्य AI सेवाद्वारा विश्लेषण गर्न म सहमत छु। सहमति नदिए पनि तपाईंले रोजगार सेवा पाउन सक्नुहुन्छ।',
-    'ကျွန်ုပ်၏ အမည်နှင့် ဆက်သွယ်ရန် အချက်အလက်များမှလွဲ၍ အခြားအချက်အလက်များ (လိုချင်သော အခြေအနေ၊ အရည်အချင်း၊ အတွေ့အကြုံ စသည်) ကို သင့်လျော်သော အလုပ်များ အကြံပြုရန် ပြင်ပ AI ဝန်ဆောင်မှုဖြင့် ခွဲခြမ်းစိတ်ဖြာခြင်းကို သဘောတူပါသည်။ သဘောမတူလည်း အလုပ်မိတ်ဆက်ပေးခြင်း ဝန်ဆောင်မှုကို ရယူနိုင်ပါသည်။',
-    '我同意将除姓名和联系方式以外的信息（希望条件、资格、经验等）通过外部AI服务进行分析，用于推荐合适的工作。即使不同意，也可以接受职业介绍服务。',
+    '氏名・連絡先を除いた情報（希望条件・資格・経験など）を外部のAIサービス（Anthropic社・米国）で分析し、求人の提案に利用することに同意します。同意しなくても職業紹介は受けられます。',
+    'なまえ・でんわ・メール・じゅうしょ いがいの じょうほう（きぼう・しかく・けいけん）を、AI（アメリカの Anthropic という かいしゃの コンピューター）で しらべて、あなたに あう しごとを さがす ために つかいます。どうい しなくても、しごとの しょうかいは うけられます。',
+    'I agree that information other than my name and contact details (job preferences, qualifications, experience, etc.) may be analyzed using an external AI service (Anthropic, USA) to suggest suitable jobs. You can still receive job placement services if you do not agree.',
+    'Tôi đồng ý để thông tin của tôi, ngoại trừ họ tên và thông tin liên lạc (nguyện vọng, bằng cấp, kinh nghiệm, v.v.), được phân tích bằng dịch vụ AI bên ngoài (Anthropic, Hoa Kỳ) nhằm đề xuất công việc phù hợp. Nếu không đồng ý, bạn vẫn được giới thiệu việc làm.',
+    'Saya setuju informasi saya selain nama dan kontak (keinginan kerja, kualifikasi, pengalaman, dll.) dianalisis menggunakan layanan AI eksternal (Anthropic, Amerika Serikat) untuk menyarankan lowongan yang sesuai. Jika tidak setuju, Anda tetap dapat menerima layanan penempatan kerja.',
+    'मेरो नाम र सम्पर्क विवरणबाहेकको जानकारी (इच्छा, योग्यता, अनुभव आदि) उपयुक्त काम सुझाउन बाह्य AI सेवा (Anthropic, अमेरिका) द्वारा विश्लेषण गर्न म सहमत छु। सहमति नदिए पनि तपाईंले रोजगार सेवा पाउन सक्नुहुन्छ।',
+    'ကျွန်ုပ်၏ အမည်နှင့် ဆက်သွယ်ရန် အချက်အလက်များမှလွဲ၍ အခြားအချက်အလက်များ (လိုချင်သော အခြေအနေ၊ အရည်အချင်း၊ အတွေ့အကြုံ စသည်) ကို သင့်လျော်သော အလုပ်များ အကြံပြုရန် ပြင်ပ AI ဝန်ဆောင်မှု (Anthropic၊ အမေရိကန်) ဖြင့် ခွဲခြမ်းစိတ်ဖြာခြင်းကို သဘောတူပါသည်။ သဘောမတူလည်း အလုပ်မိတ်ဆက်ပေးခြင်း ဝန်ဆောင်မှုကို ရယူနိုင်ပါသည်။',
+    '我同意将除姓名和联系方式以外的信息（希望条件、资格、经验等）通过外部AI服务（美国Anthropic公司）进行分析，用于推荐合适的工作。即使不同意，也可以接受职业介绍服务。',
   ],
 
   submit: ['送信する', 'おくる', 'Submit', 'Gửi', 'Kirim', 'पठाउनुहोस्', 'ပေးပို့မည်', '提交'],
@@ -282,6 +287,8 @@ export default function Intake() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+  const [agency, setAgency] = useState(null);
+  useEffect(() => { get('/intake/info').then(setAgency).catch(() => setAgency(null)); }, []);
   const [left, setLeft] = useState(RESET_SECONDS);
 
   const i = IDX[lang];
@@ -306,7 +313,7 @@ export default function Intake() {
   }, [done]);
   useEffect(() => { if (done && left <= 0) reset(); }, [done, left]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { document.title = `${T.title[i]} | Rianet`; }, [i]);
+  useEffect(() => { document.title = `${T.title[i]} | Lienet`; }, [i]);
 
   const submit = async () => {
     setError('');
@@ -356,7 +363,7 @@ export default function Intake() {
     <div className="intake" lang={HTML_LANG[lang]}>
       <style>{STYLE}</style>
       <div className="intake-top">
-        <div className="intake-brand" lang="ja">株式会社リアネット ／ Language・言語</div>
+        <div className="intake-brand" lang="ja">株式会社Lienet（リアネット） ／ Language・言語</div>
         <div className="intake-langs" role="group" aria-label="Language / 言語">
           {LANGS.map(l => (
             <button key={l.code} type="button" lang={HTML_LANG[l.code]} aria-pressed={lang === l.code} onClick={() => setLang(l.code)}>{l.label}</button>
@@ -567,6 +574,19 @@ export default function Intake() {
                 <input id="in-ai" type="checkbox" checked={form.ai_consent} onChange={e => set('ai_consent', e.target.checked)} />
                 <span>{t('ai_check')}</span>
               </label>
+              {agency && (
+                <>
+                  <h2 style={{ marginTop: 20 }}>{t('agency_title')}</h2>
+                  <div className="consent-box">
+                    <div><strong>{agency.company_name}</strong></div>
+                    {agency.license_no && <div>{t('license_label')}：{agency.license_no}</div>}
+                    {agency.handling_scope && <div>{t('scope_label')}：{agency.handling_scope}</div>}
+                    <div>{t('fee_free')}</div>
+                    <div style={{ marginTop: 8 }}>{t('contact_label')}：</div>
+                    <div>{[agency.contact_person, agency.contact_tel, agency.contact_email].filter(Boolean).join('／')}</div>
+                  </div>
+                </>
+              )}
             </section>
 
             {error && <div className="err" role="alert">{error}</div>}

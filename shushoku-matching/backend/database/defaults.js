@@ -49,6 +49,10 @@ module.exports = {
   fetch_cron: '30 2 * * *',
   // その他
   operators: '吉井',                     // 操作者（カンマ区切り）
-  company_name: '株式会社リアネット',
-  license_no: '',                        // 有料職業紹介事業 許可番号
+  company_name: '株式会社Lienet',
+  license_no: '13-ユ-318908',            // 有料職業紹介事業 許可番号
+  handling_scope: '国内・全職種',        // 取扱職種の範囲（業務の運営に関する規程）
+  contact_person: '職業紹介責任者 吉井 靖貴', // 苦情処理・個人情報の開示請求の担当者
+  contact_email: 'yoshii@lie-net.com',
+  contact_tel: '090-8516-3481',
 };

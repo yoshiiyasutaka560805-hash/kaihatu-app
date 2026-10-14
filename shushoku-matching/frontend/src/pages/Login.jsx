@@ -24,7 +24,7 @@ export default function Login({ setup, onDone }) {
     <div className="login-wrap">
       <form className="card login-card" onSubmit={submit}>
         <h1 className="page-title">求職者マッチング</h1>
-        <p className="muted">株式会社リアネット 職員用</p>
+        <p className="muted">株式会社Lienet（リアネット） 職員用</p>
         {setup && <div className="warn-box">初回起動です。職員用パスワード（8文字以上）を設定してください。受付フォームを開くと職員画面はロックされ、このパスワードで解除します。</div>}
         <div className="form-group">
           <label className="form-label" htmlFor="pw">パスワード</label>

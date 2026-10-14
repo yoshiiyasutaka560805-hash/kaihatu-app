@@ -26,7 +26,7 @@ export default function Layout({ children }) {
   return (
     <div className="app-shell">
       <aside className="sidebar no-print">
-        <div className="sidebar-header">株式会社リアネット<br />求職者マッチング</div>
+        <div className="sidebar-header">株式会社Lienet<br />求職者マッチング</div>
         <nav>
           {NAV_ITEMS.map(item => (
             <NavLink key={item.to} to={item.to} end={item.to === '/'} className={({ isActive }) => (isActive ? 'active' : '')}>

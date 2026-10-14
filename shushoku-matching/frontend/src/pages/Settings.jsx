@@ -323,11 +323,15 @@ export default function Settings() {
 
       {tab === 'basic' && (
         <>
-          <Section title="事業者情報" keys={['company_name', 'license_no', 'operators']} {...common}
-            note="操作者の変更は、画面を再読込すると左下の操作者一覧に反映されます。">
+          <Section title="事業者情報" keys={['company_name', 'license_no', 'handling_scope', 'contact_person', 'contact_email', 'contact_tel', 'operators']} {...common}
+            note="事業者名・許可番号・取扱職種・問い合わせ先は、受付フォームの「事業者情報」と提案書に表示されます。操作者の変更は、画面を再読込すると左下の操作者一覧に反映されます。">
             <div className="grid2">
               <In id="s-company" label="事業者名" name="company_name" form={form} set={set} />
               <In id="s-license" label="有料職業紹介事業 許可番号" name="license_no" form={form} set={set} placeholder="例：13-ユ-000000" />
+              <In id="s-scope" label="取扱職種の範囲" name="handling_scope" form={form} set={set} placeholder="例：国内・全職種" />
+              <In id="s-contact" label="苦情・開示請求の担当者" name="contact_person" form={form} set={set} placeholder="例：職業紹介責任者 氏名" />
+              <In id="s-cmail" label="問い合わせ先メール" name="contact_email" form={form} set={set} />
+              <In id="s-ctel" label="問い合わせ先電話" name="contact_tel" form={form} set={set} />
               <div className="form-group wide">
                 <In id="s-ops" label="操作者（カンマ区切り）" name="operators" form={form} set={set} placeholder="例：吉井,山田"
                   hint="操作者名は操作ログ・履歴に記録されます。保存後、画面を再読込すると反映されます。" />
