@@ -241,9 +241,9 @@ function parseCsv(text) {
   if (cell || row.length) { row.push(cell); rows.push(row); }
   return rows.filter((r) => r.some((c) => c.trim()));
 }
-api.post('/import/clients', (req, res) => {
-  const rows = parseCsv(String(req.body?.csv || '').replace(/^﻿/, ''));
-  if (rows.length < 2) return res.status(400).json({ error: 'ヘッダ行とデータ行が必要です' });
+function importClients(text) {
+  const rows = parseCsv(String(text || '').replace(/^\uFEFF/, ''));
+  if (rows.length < 2) throw new Error('ヘッダ行とデータ行が必要です');
   const existing = new Set(db.prepare('SELECT surname_enc, given_enc FROM clients').all().map((c) => decrypt(c.surname_enc) + '|' + decrypt(c.given_enc)));
   let created = 0; const skipped = []; const errors = [];
   rows.slice(1).forEach((r, i) => {
@@ -258,8 +258,14 @@ api.post('/import/clients', (req, res) => {
       existing.add(`${surname}|${given}`); created++;
     } catch (e) { errors.push(`${i + 2}行目: ${e.message}`); }
   });
-  req.audit('import_clients', null, `created=${created} skipped=${skipped.length} errors=${errors.length}`);
-  res.json({ created, skipped, errors });
+  return { created, skipped, errors };
+}
+api.post('/import/clients', (req, res) => {
+  try {
+    const r = importClients(req.body?.csv);
+    req.audit('import_clients', null, `created=${r.created} skipped=${r.skipped.length} errors=${r.errors.length}`);
+    res.json(r);
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // ---- 管理（管理者のみ）: 端末/セッション、操作ログ、バックアップ、ユーザー ----
@@ -297,4 +303,4 @@ if (require.main === module) {
   const host = process.env.HOST || '0.0.0.0'; // LAN/VPNからの接続用。ルーターのポート開放は絶対に行わないこと
   app.listen(port, host, () => console.log(`ショートステイAI秘書 起動: http://localhost:${port}`));
 }
-module.exports = { app, isAllowedIp };
+module.exports = { app, isAllowedIp, importClients };
