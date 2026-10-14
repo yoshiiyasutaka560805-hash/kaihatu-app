@@ -33,7 +33,7 @@ function ImportResult({ r }) {
   const hasErr = r.errors?.length > 0;
   return (
     <div className={hasErr && !r.inserted && !r.updated ? 'danger-box' : 'ok-box'}>
-      <div>CSV取込：新規 {r.inserted}件・更新 {r.updated}件・スキップ {r.skipped}件（自社求人と同番号）・期限切れ無効化 {r.deactivated}件</div>
+      <div>CSV取込{r.format ? `（${r.format}）` : ''}：新規 {r.inserted}件・更新 {r.updated}件・スキップ {r.skipped}件（自社求人と同番号）・期限切れ無効化 {r.deactivated}件</div>
       {r.rematch && <div>再マッチング：対象求職者 {r.rematch.seekers}名、新着候補 {r.rematch.newCandidates}件</div>}
       {hasErr && (
         <details open={r.errors.length <= 10}>
@@ -101,7 +101,7 @@ function ImportCard({ onDone }) {
         <Link className="btn btn-primary" to="/postings/new">＋ 自社求人を登録</Link>
       </div>
       <p className="muted" style={{ marginTop: 8 }}>
-        CSV取込は求人番号で上書き更新します（自社受理求人と同じ番号の行はスキップ）。求人票のAI読取は事業所から受け取った求人票が対象で、結果は承認待ちに入ります。
+        CSV取込は求人番号で上書き更新します（自社受理求人と同じ番号の行はスキップ）。ジョブメドレーの求人一覧CSVもそのまま取り込めます（ネット掲載求人として2週間有効。案内前に掲載元で最新情報を確認し、紹介する場合は事業所から求人の申込みを受けてください）。求人票のAI読取は事業所から受け取った求人票が対象で、結果は承認待ちに入ります。
       </p>
       <ErrorText error={csvErr} /><ImportResult r={csvRes} />
       <ErrorText error={fetchErr} /><FetchResult r={fetchRes} />

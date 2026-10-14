@@ -30,6 +30,11 @@ const MIGRATIONS = [
     db.prepare("UPDATE app_settings SET value = '株式会社Lienet' WHERE key = 'company_name' AND value = '株式会社リアネット'").run();
     db.prepare("UPDATE app_settings SET value = '13-ユ-318908' WHERE key = 'license_no' AND value = ''").run();
   },
+  // v4：ネット求人CSV（数万件）の取込に備えた索引
+  db => {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_postings_hw_no ON job_postings(hw_posting_no)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_postings_origin ON job_postings(origin)');
+  },
 ];
 
 let _db = null;

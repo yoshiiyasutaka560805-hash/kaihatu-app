@@ -19,13 +19,14 @@
 - 要確認：所在地（規程・事業報告は足立区舎人、2026-09契約書は港区北青山）→ 変更届の有無。
 
 ## 構成
-- backend：Node 22 / Express / better-sqlite3（WAL）。マイグレーションは `database/db.js` の MIGRATIONS（PRAGMA user_version、現在 v3）。設定は `database/defaults.js` → app_settings（INSERT OR IGNORE）。
+- backend：Node 22 / Express / better-sqlite3（WAL）。マイグレーションは `database/db.js` の MIGRATIONS（PRAGMA user_version、現在 v4）。設定は `database/defaults.js` → app_settings（INSERT OR IGNORE）。
 - frontend：React 18 / react-router 7 / Vite 6。`npm run build` の dist を backend が配信。
 - 認証：職員ログイン（scrypt・HttpOnly Cookie・30分）。受付フォーム `/intake` と `/api/intake*` は公開。全APIに `X-Rianet-App: 1` ヘッダ必須（CSRF対策。名称は互換のため変更しない）。
 - AI：`@anthropic-ai/sdk`、`services/ai/client.js`。APIキーは `RIANET_ANTHROPIC_API_KEY` または `ANTHROPIC_API_KEY`（PCの環境変数）。送信前に必ず仮名化（`ai/pii.js`）。求職者の AI 利用同意（ai_consent）がなければ送らない。
 - ネット求人検索：web_search/web_fetch ツール＋ `submit_jobs`（`ai/webJobSearch.js`）。
+- ジョブメドレー求人一覧CSV（職種コード,求人URL,タイトル,…,特徴タグ）は求人画面の「CSV取込」で自動判別（`sources/jobMedleyImport.js`）。origin=web、求人番号は URL から W-<hash>、2週間有効。応募要件の資格列挙は「いずれか」とみなし最下位の1つだけ必須（無資格可・系統違いの並列は歓迎資格へ）。2026-10-14 時点の東京都 介護9,776件・看護6,664件で検証。
 - HW 求人情報提供サービス Web API：`services/sources/hwApi.js`。URL・タグ・項目対応は設定で可変、承認前は無効。仕様書（マニュアル）を受け取ったら設定値を埋めて実装を詰める。
-- テスト：`cd backend && npm test`（53件。TZ=UTC でも通ること）。
+- テスト：`cd backend && npm test`（55件。TZ=UTC でも通ること）。
 
 ## ヒアリングシート（Google ドキュメント）
 - 「求職者ヒアリングシート（介護・看護職共通）」ID `1FLwYnfMp4WL09FCbbn407YDokmyq5OEpaAFHDoSBdO8`

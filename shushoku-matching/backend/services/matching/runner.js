@@ -43,8 +43,8 @@ function evaluate(seeker, postings, settings) {
 
 // 判定対象の求人：有効なもの。ただし自社求人化済みのHW求人は自社求人側で判定する（重複表示を防ぐ）
 function activePostings() {
-  return getDb().prepare(`SELECT * FROM job_postings p WHERE p.is_active = 1 AND NOT (p.origin <> 'own' AND EXISTS (
-    SELECT 1 FROM job_postings o WHERE o.origin = 'own' AND o.hw_posting_no = p.posting_no))`).all();
+  return getDb().prepare(`SELECT * FROM job_postings p WHERE p.is_active = 1 AND (p.origin = 'own' OR p.posting_no NOT IN (
+    SELECT hw_posting_no FROM job_postings WHERE origin = 'own' AND hw_posting_no IS NOT NULL))`).all();
 }
 
 // 求職者1名について全有効求人を判定し matches を更新
