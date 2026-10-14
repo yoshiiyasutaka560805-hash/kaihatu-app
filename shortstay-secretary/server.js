@@ -87,7 +87,9 @@ const clientOut = (c, full = true) => ({
 });
 api.get('/clients', (req, res) => {
   req.audit('list_clients');
-  res.json(db.prepare('SELECT * FROM clients WHERE active=1 ORDER BY id').all().map((c) => clientOut(c, false)));
+  const pats = db.prepare('SELECT client_id, weekday, kind, time FROM pickup_patterns ORDER BY weekday, time').all();
+  res.json(db.prepare('SELECT * FROM clients WHERE active=1 ORDER BY id').all().map((c) => ({
+    ...clientOut(c, false), patterns: pats.filter((p) => p.client_id === c.id) })));
 });
 api.get('/clients/:id', (req, res) => {
   const c = db.prepare('SELECT * FROM clients WHERE id=?').get(req.params.id);

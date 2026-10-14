@@ -73,11 +73,25 @@ async function home(app) {
 
 async function clients(app) {
   const list = await api('GET', '/clients');
-  app.innerHTML = `<div class="row"><h2>利用者（${list.length}名）</h2><button class="fit" id="new">＋ 新規登録</button></div>` +
-    list.map((c) => `<div class="card" data-id="${c.id}" style="cursor:pointer">${esc(c.name)} ${c.wheelchair_type ? '♿' + esc(c.wheelchair_type === '車椅子' ? '' : '(リクライニング)') : ''} ${esc(c.gait)} ${c.tags.map((t) => `<span class="badge b-missing">${esc(t)}</span>`).join(' ')} <span class="muted">（表示用: ${esc(c.masked_name)}）</span></div>`).join('') +
-    `<div id="detail"></div>`;
+  const DAYS_ = ['日', '月', '火', '水', '木', '金', '土'];
+  const row = (c) => {
+    const pat = c.patterns.map((p) => `${DAYS_[p.weekday]}${p.kind}${p.time}`).join(' / ');
+    return `<div class="card" data-id="${c.id}" data-q="${esc((c.name + c.masked_name + c.gait + c.wheelchair_type + c.tags.join('') + c.vehicle_hint).toLowerCase())}" style="cursor:pointer">
+      <div class="row"><b class="fit">No.${c.id}</b><span><b>${esc(c.name)}</b> <span class="muted">（共有用: ${esc(c.masked_name)}）</span></span></div>
+      <div>${c.wheelchair_type ? `<span class="badge b-urgent">♿${esc(c.wheelchair_type)}</span> ` : ''}${c.gait ? `<span class="badge b-ok">${esc(c.gait)}</span> ` : ''}${c.vehicle_hint ? `<span class="badge b-missing">${esc(c.vehicle_hint)}</span> ` : ''}${c.tags.map((t) => `<span class="badge b-warn">${esc(t)}</span>`).join(' ')}</div>
+      <div class="muted">${pat ? '固定送迎: ' + esc(pat) : '固定送迎: 未登録'}</div></div>`;
+  };
+  app.innerHTML = `<div class="stickyhead"><div class="row"><h2>利用者（<span id="cnt">${list.length}</span>名）</h2><button class="fit" id="new">＋ 新規登録</button></div>
+    <input id="q" type="search" placeholder="名前・歩行状態・注意タグで絞り込み（例: 車椅子 / オートロック）" style="width:100%"></div>
+    <div id="clist">${list.map(row).join('')}</div><div id="detail"></div>`;
   $('#new').onclick = () => clientForm();
-  app.querySelectorAll('.card[data-id]').forEach((el) => { el.onclick = guard(() => clientDetail(el.dataset.id)); });
+  const bind = () => app.querySelectorAll('.card[data-id]').forEach((el) => { el.onclick = guard(() => clientDetail(el.dataset.id)); });
+  bind();
+  $('#q').oninput = () => {
+    const q = $('#q').value.trim().toLowerCase(); let n = 0;
+    app.querySelectorAll('.card[data-id]').forEach((el) => { const hit = !q || el.dataset.q.includes(q); el.hidden = !hit; if (hit) n++; });
+    $('#cnt').textContent = n;
+  };
 }
 async function clientForm(c = {}) {
   OPTS = OPTS || await api('GET', '/profile-options');

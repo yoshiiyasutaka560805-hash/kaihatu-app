@@ -17,3 +17,4 @@ nav button{flex:1;border-radius:0;background:transparent;color:var(--fg);min-hei
 table{width:100%;border-collapse:collapse;font-size:.88rem}td,th{padding:6px;border-bottom:1px solid var(--line);text-align:left}
 #toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:#111;color:#fff;padding:8px 16px;border-radius:8px;opacity:0;transition:.2s;pointer-events:none}#toast.on{opacity:1}
 .secret{filter:blur(6px)}.secret.show{filter:none}
+.stickyhead{position:sticky;top:57px;z-index:4;background:var(--bg);padding:6px 0 8px}.card[hidden]{display:none}
