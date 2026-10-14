@@ -49,7 +49,19 @@ const seeker = {
   extra_activity_permit: 'bool', residence_checked_date: 'date', residence_checked_by: 'text:30',
   jlpt_level: ['N1', 'N2', 'N3', 'N4', 'N5', 'なし'], care_japanese_test: 'bool', skill_test: 'text:100',
   notes: 'text:3000', status: SEEKER_STATUSES,
+  // ヒアリングシート（v2）
+  contact_method: 'text:50', contact_time: 'text:100', referral_source: 'text:100', sheet_date: 'date',
+  shift_pattern: 'text:100', oncall_ok: 'bool', unavailable_times: 'text:300', must_conditions: 'text:1000', motivation: 'text:2000',
+  desired_wage_target: 'yen', current_wage: 'yen', required_benefits: 'text:200', holiday_pref: 'text:100', fixed_day_off: 'text:50',
+  driver_license: ['普通（AT限定なし）', '普通（AT限定）', 'なし'], experience_settings: 'text:100', night_experience: 'text:100',
+  nurse_specialty: 'text:200', jft_basic: 'bool',
+  employment_status: ['在職中', '離職中'], resignation_date: 'date', job_search_status: 'text:100', offer_deadline: 'date',
+  other_agencies: 'bool', interview_availability: 'text:300', current_employer_check: 'bool',
+  disclosure_scope: ['氏名を伏せた概要のみ', '氏名を含めて提供可'], special_considerations: 'text:1000',
 };
+const SHIFT_PATTERNS = ['日勤のみ', '早番・遅番可', '夜勤可', 'オンコール可'];
+const BENEFITS = ['交通費支給', '資格手当', '夜勤手当', '住宅手当', '賞与あり', '退職金制度'];
+const PRIORITY_ITEMS = ['給与', '勤務地', '休日', '職場の雰囲気', '仕事内容', '勤務時間'];
 
 const match = {
   intro_status: INTRO_STATUSES, proposed_date: 'date', applied_date: 'date', interview_at: 'datetime',
@@ -76,5 +88,5 @@ const interviewNote = { at: 'datetime', method: ['来所', '電話', 'オンラ�
 
 const task = { title: 'text:200', due_date: 'date', seeker_id: 'int' };
 
-module.exports = { FACILITY_TYPES, JOB_KINDS, SEEKER_STATUSES, INTRO_STATUSES, DECLINE_REASONS, LANGUAGES,
+module.exports = { SHIFT_PATTERNS, BENEFITS, PRIORITY_ITEMS, FACILITY_TYPES, JOB_KINDS, SEEKER_STATUSES, INTRO_STATUSES, DECLINE_REASONS, LANGUAGES,
   WEIGHT_PROFILES, VISA_TYPES, employer, posting, seeker, match, placement, followup, complaint, interviewNote, task };

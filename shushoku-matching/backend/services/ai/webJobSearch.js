@@ -64,6 +64,9 @@ function conditionsFor(seeker) {
     夜勤: seeker.night_only ? '夜勤専従希望' : seeker.shift_ok ? (seeker.night_max_per_month != null ? `月${seeker.night_max_per_month}回まで可` : '可') : '不可',
     勤務時間: seeker.available_start && seeker.available_end ? `${seeker.available_start}〜${seeker.available_end}` : '',
     資格: seeker.licenses || '',
+    必須の待遇: seeker.required_benefits || '',
+    休日: seeker.holiday_pref || '',
+    勤務時間帯: seeker.shift_pattern || '',
     外国籍: seeker.is_foreign_national ? `外国籍の方が応募可能な求人を優先（在留資格: ${seeker.visa_status || '未確認'}）` : '',
   };
 }

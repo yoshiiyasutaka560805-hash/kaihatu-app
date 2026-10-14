@@ -119,3 +119,14 @@ test('案内可否の4段階判定', () => {
   assert.ok(run({}, {}).referralNote.includes('自社求人化'));
   assert.equal(run({}, { origin: 'own' }).referralNote, null);
 });
+
+test('ヒアリング条件：必須の待遇が求人で確認できなければ要確認、週休2日希望は週6日求人を除外', () => {
+  const r = run({ required_benefits: '賞与あり,住宅手当' }, { description: '賞与年2回' });
+  assert.ok(r.warnings.some(w => w.includes('住宅手当')));
+  assert.ok(!r.warnings.some(w => w.includes('賞与あり')));
+  assert.equal(r.verdict.level, 'check');
+  assert.ok(run({ holiday_pref: '週休2日以上', max_days_per_week: null }, { days_per_week: 6 }).excluded);
+  const w = run({ desired_wage_min: 200000, desired_wage_target: 300000 }, {});
+  assert.equal(w.excluded, false);
+  assert.ok(w.items.find(i => i.label === '賃金').points < 20);
+});

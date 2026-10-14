@@ -11,6 +11,18 @@ const DB_PATH = process.env.MATCHING_DB_PATH
 // スキーマ変更は末尾に追加していく（PRAGMA user_version で適用済みを管理）
 const MIGRATIONS = [
   db => db.exec(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8')),
+  // v2：初回面接ヒアリングシートの項目
+  db => {
+    const cols = [
+      'contact_method TEXT', 'contact_time TEXT', 'referral_source TEXT', 'sheet_date TEXT',
+      'shift_pattern TEXT', 'oncall_ok INTEGER', 'unavailable_times TEXT', 'must_conditions TEXT', 'motivation TEXT',
+      'desired_wage_target INTEGER', 'current_wage INTEGER', 'required_benefits TEXT', 'holiday_pref TEXT', 'fixed_day_off TEXT',
+      'driver_license TEXT', 'experience_settings TEXT', 'night_experience TEXT', 'nurse_specialty TEXT', 'jft_basic INTEGER',
+      'employment_status TEXT', 'resignation_date TEXT', 'job_search_status TEXT', 'offer_deadline TEXT', 'other_agencies INTEGER',
+      'interview_availability TEXT', 'current_employer_check INTEGER', 'disclosure_scope TEXT', 'special_considerations TEXT',
+    ];
+    for (const c of cols) db.exec(`ALTER TABLE job_seekers ADD COLUMN ${c}`);
+  },
 ];
 
 let _db = null;

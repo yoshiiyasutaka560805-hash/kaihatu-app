@@ -14,6 +14,7 @@ const { normalizePosting, nextOwnPostingNo } = require('../services/postingStore
 const { todayJst, addMonths } = require('../utils/dates');
 const { currentOperator } = require('../middleware/context');
 const { detectProhibited } = require('../services/ai/pii');
+const { applyHearing } = require('../services/hearing');
 
 router.get('/', (req, res) => {
   const rows = getDb().prepare(`SELECT d.*, s.name AS seeker_name FROM drafts d LEFT JOIN job_seekers s ON s.id = d.seeker_id
@@ -82,7 +83,8 @@ router.post('/:id/approve', (req, res) => {
   } else if (d.kind === 'seeker_sheet') {
     const fields = data.fields || data;
     if (d.seeker_id) {
-      const o = validate(fields, specs.seeker);
+      const cur = db.prepare('SELECT * FROM job_seekers WHERE id = ?').get(d.seeker_id);
+      const o = applyHearing(validate(fields, specs.seeker), cur);
       for (const k of ['name', 'status', 'consent_date', 'accepted_date', 'validity_end']) delete o[k];
       for (const k of Object.keys(o)) if (o[k] == null) delete o[k];
       const cols = columnsOf(o, specs.seeker);
@@ -90,7 +92,7 @@ router.post('/:id/approve', (req, res) => {
       resultId = d.seeker_id;
       prohibited = detectProhibited([o.notes, o.experience_note, o.priorities]);
     } else {
-      const o = validate(fields, specs.seeker, { required: ['name', 'consent_date'] });
+      const o = applyHearing(validate(fields, specs.seeker, { required: ['name', 'consent_date'] }));
       o.accepted_date = o.accepted_date || todayJst();
       o.validity_end = o.validity_end || addMonths(o.accepted_date, Number(getSettings().seeker_validity_months || 3));
       const cols = columnsOf(o, specs.seeker);

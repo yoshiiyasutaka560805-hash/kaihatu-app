@@ -61,6 +61,12 @@ function todayTasks(today = todayJst()) {
     push({ kind: '求職有効期間', priority: 3, due: r.validity_end, title: `${r.name}さん 求職の有効期間（${r.validity_end}）の更新確認`, link: `/seekers/${r.id}` });
   }
 
+  // 他社内定の回答期限（7日以内）・退職予定日
+  for (const r of db.prepare(`SELECT id, name, offer_deadline FROM job_seekers WHERE deleted_at IS NULL
+      AND status IN ('受付','紹介中','面接','内定') AND offer_deadline IS NOT NULL AND offer_deadline BETWEEN ? AND ?`).all(today, in7)) {
+    push({ kind: '他社内定', priority: 1, due: r.offer_deadline, title: `${r.name}さん 他社内定の回答期限（${r.offer_deadline}）までに提案・面接調整`, link: `/seekers/${r.id}/matches` });
+  }
+
   // 新着候補
   const news = db.prepare(`SELECT s.id, s.name, COUNT(*) c FROM matches m JOIN job_seekers s ON s.id = m.seeker_id
     WHERE m.is_new = 1 AND s.deleted_at IS NULL GROUP BY s.id`).all();

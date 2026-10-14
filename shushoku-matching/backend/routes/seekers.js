@@ -10,6 +10,7 @@ const { detectProhibited } = require('../services/ai/pii');
 const { closeSeeker, reopenSeeker } = require('../services/retention');
 const { solicitationGuard } = require('../services/matching/runner');
 const { currentOperator } = require('../middleware/context');
+const { applyHearing } = require('../services/hearing');
 
 const CLOSED = ['就職', '終了'];
 
@@ -41,7 +42,7 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const o = validate(req.body, specs.seeker, { required: ['name', 'consent_date'] });
+  const o = applyHearing(validate(req.body, specs.seeker, { required: ['name', 'consent_date'] }));
   const settings = getSettings();
   o.accepted_date = o.accepted_date || todayJst();
   o.validity_end = o.validity_end || addMonths(o.accepted_date, Number(settings.seeker_validity_months || 3));
@@ -57,7 +58,7 @@ const KEEP_IF_EMPTY = ['name', 'status', 'consent_date', 'accepted_date', 'valid
 
 router.put('/:id', (req, res) => {
   const before = load(req.params.id);
-  const o = validate(req.body, specs.seeker);
+  const o = applyHearing(validate(req.body, specs.seeker), before);
   for (const k of KEEP_IF_EMPTY) if (k in o && (o[k] == null || o[k] === '')) delete o[k];
   const cols = columnsOf(o, specs.seeker);
   if (cols.length) {

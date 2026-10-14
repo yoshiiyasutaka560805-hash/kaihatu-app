@@ -62,7 +62,7 @@ function seekerAreas(seeker) {
 //   high  案内可（マッチ度高）… 確認事項なし・スコアが基準以上
 //   ok    案内可         … 確認事項なし
 const CONFIRM_PATTERNS = [/在留カード原本/, /在留期限まで/, /外国人雇用/, /特定技能の受入れ/, /年齢条件/, /夜勤回数が不明/,
-  /資格外活動/, /日本語/];
+  /資格外活動/, /日本語/, /必須の待遇/, /オンコール/, /固定休/, /早番の可能性/];
 const VERDICT_LABEL = { ng: '案内不可', check: '要確認', high: '案内可（マッチ度高）', ok: '案内可' };
 
 function verdictOf({ excluded, score, warnings, completeness: comp }, highScore = 75) {
@@ -118,6 +118,8 @@ function scoreMatch(seeker, posting, ctx = {}) {
 
   // 賃金（月額換算・固定手当・夜勤手当込み）
   const desiredMonthly = toMonthlyFor(seeker.desired_wage_min, seeker.desired_wage_type || 'monthly', posting);
+  // 加点は「希望給与」、足切りは「最低希望ライン」（desired_wage_min）で判定
+  const targetMonthly = toMonthlyFor(seeker.desired_wage_target, seeker.desired_wage_type || 'monthly', posting) || desiredMonthly;
   const top = postingMonthly(posting, 'max');
   const bottom = postingMonthly(posting, 'min');
   if (desiredMonthly && top != null && top < desiredMonthly) {
@@ -191,6 +193,28 @@ function scoreMatch(seeker, posting, ctx = {}) {
     }
   }
 
+  // ヒアリングシートの条件
+  const postingText = `${posting.description || ''} ${posting.holidays_note || ''} ${posting.social_insurance || ''} ${posting.commute_note || ''} ${posting.overtime || ''}`;
+  if (/週休2日/.test(seeker.holiday_pref || '') && posting.days_per_week && posting.days_per_week > 5) {
+    exclude('holiday_pref', `週${posting.days_per_week}日勤務（週休2日以上を希望）`, null);
+  }
+  if (seeker.fixed_day_off) warnings.push(`固定休（${seeker.fixed_day_off}）の希望あり。シフトで対応できるか求人者に確認`);
+  const BENEFIT_CHECK = {
+    交通費支給: () => /交通費|通勤手当/.test(postingText) || /交通費|通勤手当/.test(posting.commute_note || ''),
+    資格手当: () => /資格手当/.test(postingText),
+    夜勤手当: () => (posting.night_allowance || 0) > 0 || /夜勤手当/.test(postingText),
+    住宅手当: () => /住宅手当|家賃補助|寮|社宅/.test(postingText),
+    賞与あり: () => (posting.bonus_months || 0) > 0 || /賞与|ボーナス/.test(postingText),
+    退職金制度: () => /退職金/.test(postingText),
+  };
+  for (const b of splitList(seeker.required_benefits)) {
+    if (BENEFIT_CHECK[b] && !BENEFIT_CHECK[b]()) warnings.push(`必須の待遇「${b}」が求人情報で確認できない（要確認）`);
+  }
+  if (/オンコール/.test(postingText) && !seeker.oncall_ok) warnings.push('求人にオンコール対応の記載あり（本人はオンコール可と回答していない）');
+  if (/日勤のみ/.test(seeker.shift_pattern || '') && !posting.shift_work && posting.work_start && posting.work_start < '08:00') {
+    warnings.push(`始業${posting.work_start}（早番の可能性。本人は日勤のみ希望）`);
+  }
+
   // ── 加点 ────────────────────────────────
   const W = WEIGHTS[seeker.weight_profile] || WEIGHTS.balanced;
   const add = (label, ratio, note) => items.push({ label, points: Math.round(W[label] * ratio), max: W[label], note });
@@ -206,10 +230,11 @@ function scoreMatch(seeker, posting, ctx = {}) {
   else if (catHit) add('職種', 0.8, '職種一致（施設種別は希望外）');
   else add('職種', facHit ? 0.3 : 0, '希望職種と不一致');
 
-  if (!desiredMonthly || bottom == null) add('賃金', 0.4, '比較情報不足');
-  else if (bottom >= desiredMonthly * 1.2) add('賃金', 1, '下限でも希望を2割以上上回る');
-  else if (bottom >= desiredMonthly) add('賃金', 0.8, '下限で希望額以上');
-  else if (top >= desiredMonthly) add('賃金', top / desiredMonthly >= 1.1 ? 0.55 : 0.4, '上限側で希望額を満たす（経験等で変動）');
+  if (!targetMonthly || bottom == null) add('賃金', 0.4, '比較情報不足');
+  else if (bottom >= targetMonthly * 1.2) add('賃金', 1, '下限でも希望を2割以上上回る');
+  else if (bottom >= targetMonthly) add('賃金', 0.8, '下限で希望額以上');
+  else if (top >= targetMonthly) add('賃金', top / targetMonthly >= 1.1 ? 0.55 : 0.4, '上限側で希望額を満たす（経験等で変動）');
+  else if (desiredMonthly && top >= desiredMonthly) add('賃金', 0.3, '最低希望ラインは満たすが希望給与には届かない');
   else add('賃金', 0.2, '許容範囲内の不足');
 
   if (commute != null) {

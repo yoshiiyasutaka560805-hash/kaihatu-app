@@ -50,6 +50,17 @@ function pseudonymizeSeeker(s) {
     経験年数: s.experience_years || 0,
     経験概要: maskText(s.experience_note, names).slice(0, 800),
     優先順位: maskText(s.priorities, names).slice(0, 300),
+    希望給与: s.desired_wage_target ? `${s.desired_wage_target}円` : '未設定',
+    勤務時間帯: s.shift_pattern || '',
+    必須の待遇: s.required_benefits || '',
+    休日の希望: [s.holiday_pref, s.fixed_day_off ? `固定休:${s.fixed_day_off}` : ''].filter(Boolean).join(' '),
+    運転免許: s.driver_license || '',
+    経験した現場: s.experience_settings || '',
+    夜勤経験: s.night_experience || '',
+    看護の診療科経験: s.nurse_specialty || '',
+    避けたい_譲れない条件: maskText(s.must_conditions, names).slice(0, 300),
+    転職理由: maskText(s.motivation, names).slice(0, 300),
+    入職希望時期: s.available_from || '',
     外国籍: s.is_foreign_national ? `はい（在留資格: ${s.visa_status || '未確認'}、日本語: ${s.jlpt_level || '不明'}）` : 'いいえ',
   };
 }

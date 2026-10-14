@@ -28,7 +28,18 @@ const LABELS = {
   available_from: ['就業可能日', '入職可能日', '勤務開始可能日'], licenses: ['保有資格', '資格', '免許・資格'],
   experience_years: ['経験年数', '介護経験年数'], experience_note: ['職務経歴', '経験内容', '経歴'], priorities: ['優先順位', '重視する条件'],
   is_foreign_national: ['外国籍'], visa_status: ['在留資格'], residence_expiry: ['在留期限'], jlpt_level: ['日本語能力', 'JLPT'],
-  care_japanese_test: ['介護日本語評価試験'], skill_test: ['技能試験'], notes: ['備考', 'その他'],
+  care_japanese_test: ['介護日本語評価試験'], skill_test: ['技能試験'], notes: ['備考'],
+  // ヒアリングシート（初回面接用）
+  contact_method: ['連絡方法', '連絡のとりやすい方法'], contact_time: ['連絡のとりやすい時間帯'], referral_source: ['紹介元・担当者', '紹介元'],
+  sheet_date: ['記入日'], shift_pattern: ['希望勤務時間帯', '勤務時間帯'], unavailable_times: ['勤務に制約のある曜日・時間帯'],
+  must_conditions: ['避けたい条件・譲れない条件'], motivation: ['志望動機・転職理由', '転職理由'], desired_wage_target: ['希望給与'],
+  current_wage: ['現在（直近）の給与', '現在の給与'], required_benefits: ['必須の手当・待遇'], holiday_pref: ['休日・休暇の希望'],
+  fixed_day_off: ['固定休日希望（曜日）', '固定休日'], driver_license: ['運転免許'], experience_settings: ['経験した現場'],
+  night_experience: ['夜勤経験'], nurse_specialty: ['看護師の診療科・病棟経験', '診療科・病棟経験'], jft_basic: ['JFT-Basic合格', 'JFT-Basic'],
+  employment_status: ['現職の状況'], resignation_date: ['退職予定日'], job_search_status: ['転職活動の状況'],
+  offer_deadline: ['内定の回答期限', '他社内定の回答期限'], other_agencies: ['他の紹介会社の利用'], interview_availability: ['面接・職場見学が可能な曜日・時間帯'],
+  current_employer_check: ['現在の勤務先への在籍確認'], disclosure_scope: ['紹介先へ提供してよい情報の範囲'],
+  special_considerations: ['配慮してほしいこと', 'その他ご要望・配慮してほしいこと'],
 };
 const LABEL_INDEX = new Map(Object.entries(LABELS).flatMap(([f, ls]) => ls.map(l => [l.replace(/\s/g, ''), f])));
 const WAGE_TYPE_WORDS = { 月給: 'monthly', 時給: 'hourly', 日給: 'daily', 年俸: 'annual' };
@@ -103,9 +114,11 @@ function parseLabeled(rows) {
     if (f && value && !/^例[：:]/.test(value) && !(f in data)) data[f] = String(value).trim();
   }
   if (data.desired_wage_type) data.desired_wage_type = WAGE_TYPE_WORDS[data.desired_wage_type] || data.desired_wage_type;
-  for (const b of ['shift_ok', 'night_only', 'is_foreign_national', 'care_japanese_test']) {
+  for (const b of ['shift_ok', 'night_only', 'is_foreign_national', 'care_japanese_test', 'jft_basic', 'other_agencies', 'current_employer_check', 'oncall_ok']) {
     if (b in data) data[b] = /^(可|はい|あり|有|○|〇|yes|合格)/i.test(data[b]) ? 1 : 0;
   }
+  // 優先順位「1.給与 2.勤務地 3.休日」→「給与,勤務地,休日」
+  if (data.priorities) data.priorities = data.priorities.replace(/[0-9０-９]+[.．、)）]\s*/g, ',').split(',').map(x => x.trim()).filter(Boolean).join(',');
   return data;
 }
 
@@ -166,7 +179,7 @@ async function readConditionSheet(buf, filename, mimetype, { knownNames = [], al
   const uncertain = ai.uncertain_points || [];
   delete ai.uncertain_points;
   for (const k of Object.keys(ai)) if (ai[k] === null) delete ai[k];
-  for (const b of ['shift_ok', 'night_only']) if (b in ai) ai[b] = ai[b] ? 1 : 0;
+  for (const b of ['shift_ok', 'night_only', 'oncall_ok', 'jft_basic', 'other_agencies', 'current_employer_check', 'care_japanese_test', 'is_foreign_national']) if (b in ai) ai[b] = ai[b] ? 1 : 0;
   return { method: 'ai', data: { ...identity, ...ai }, uncertain, textChars: text.length };
 }
 

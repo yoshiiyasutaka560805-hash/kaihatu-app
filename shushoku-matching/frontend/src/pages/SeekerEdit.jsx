@@ -19,9 +19,18 @@ const LABELS = {
   is_foreign_national: '外国籍', visa_status: '在留資格', residence_expiry: '在留期限', work_restriction: '就労制限',
   extra_activity_permit: '資格外活動許可', residence_checked_date: '在留カード原本確認日', residence_checked_by: '在留カード確認者',
   jlpt_level: 'JLPT', care_japanese_test: '介護日本語評価試験合格', skill_test: '技能試験',
+  // ヒアリングシート
+  contact_method: '連絡方法', contact_time: '連絡のとりやすい時間帯', referral_source: '紹介元・担当者', sheet_date: '記入日',
+  shift_pattern: '希望勤務時間帯', oncall_ok: 'オンコール可', unavailable_times: '勤務に制約のある曜日・時間帯',
+  must_conditions: '避けたい条件・譲れない条件', motivation: '志望動機・転職理由', desired_wage_target: '希望給与',
+  current_wage: '現在（直近）の給与', required_benefits: '必須の手当・待遇', holiday_pref: '休日・休暇の希望', fixed_day_off: '固定休日希望',
+  driver_license: '運転免許', experience_settings: '経験した現場', night_experience: '夜勤経験', nurse_specialty: '看護師の診療科・病棟経験',
+  jft_basic: 'JFT-Basic合格', employment_status: '現職の状況', resignation_date: '退職予定日', job_search_status: '転職活動の状況',
+  offer_deadline: '他社内定の回答期限', other_agencies: '他の紹介会社の利用', interview_availability: '面接・職場見学が可能な曜日・時間帯',
+  current_employer_check: '在籍確認可', disclosure_scope: '紹介先へ提供してよい情報の範囲', special_considerations: '配慮事項',
 };
 const FIELDS = Object.keys(LABELS);
-const BOOL_FIELDS = ['ai_consent', 'shift_ok', 'night_only', 'is_foreign_national', 'extra_activity_permit', 'care_japanese_test'];
+const BOOL_FIELDS = ['ai_consent', 'shift_ok', 'night_only', 'is_foreign_national', 'extra_activity_permit', 'care_japanese_test', 'oncall_ok', 'jft_basic', 'other_agencies', 'current_employer_check'];
 const WEIGHT_LABEL = { balanced: 'バランス', wage: '賃金重視', proximity: '近さ重視', holiday: '休日重視' };
 const TRANSPORTS = ['徒歩', '自転車', '車', '公共交通'];
 const JLPT = ['N1', 'N2', 'N3', 'N4', 'N5', 'なし'];
@@ -389,7 +398,7 @@ export default function SeekerEdit() {
 
   const guard = seeker.data?.guard;
   const shownWarnings = warnings ?? seeker.data?.prohibited ?? [];
-  const tabs = [['basic', '基本・同意'], ['wish', '希望条件'], ['foreign', '外国籍・在留'], ...(isNew ? [] : [['notes', '面談記録']])];
+  const tabs = [['basic', '基本・同意'], ['wish', '希望条件'], ['hearing', 'ヒアリング'], ['foreign', '外国籍・在留'], ...(isNew ? [] : [['notes', '面談記録']])];
   const languages = meta?.languages || Object.keys(LANG_LABEL);
 
   return (
@@ -479,6 +488,42 @@ export default function SeekerEdit() {
             <TA label="経験概要" name="experience_note" form={form} set={set} rows={3} />
             <TA label="希望の優先順位" name="priorities" form={form} set={set} rows={2} hint="自由記述（例：通勤30分以内を最優先、次に賃金）" />
           </div>
+        </Card>
+      )}
+
+      {tab === 'hearing' && (
+        <Card>
+          <div className="muted" style={{ marginBottom: 8 }}>初回面接用ヒアリングシートの項目です。勤務時間帯・必須の待遇・休日の希望・優先順位・最低希望ラインは判定に使われます。</div>
+          <div className="grid2">
+            <In label="連絡方法" name="contact_method" form={form} set={set} placeholder="電話／メール" />
+            <In label="連絡のとりやすい時間帯" name="contact_time" form={form} set={set} />
+            <In label="紹介元・担当者" name="referral_source" form={form} set={set} />
+            <In label="記入日" name="sheet_date" type="date" form={form} set={set} />
+            <In label="希望勤務時間帯" name="shift_pattern" form={form} set={set} hint="日勤のみ／早番・遅番可／夜勤可／オンコール可（カンマ区切り）" />
+            <In label="希望給与（加点に使用）" name="desired_wage_target" form={form} set={set} hint="最低希望ラインは「希望条件」タブの希望賃金" />
+            <In label="現在（直近）の給与（任意）" name="current_wage" form={form} set={set} />
+            <In label="必須の手当・待遇" name="required_benefits" form={form} set={set} hint="交通費支給／資格手当／夜勤手当／住宅手当／賞与あり／退職金制度" />
+            <In label="休日・休暇の希望" name="holiday_pref" form={form} set={set} placeholder="週休2日以上" />
+            <In label="固定休日希望（曜日）" name="fixed_day_off" form={form} set={set} />
+            <Sel label="運転免許" name="driver_license" form={form} set={set} options={['普通（AT限定なし）', '普通（AT限定）', 'なし']} />
+            <In label="経験した現場" name="experience_settings" form={form} set={set} placeholder="施設系,在宅系,病院,クリニック" />
+            <In label="夜勤経験" name="night_experience" form={form} set={set} placeholder="あり（月4回・3年）" />
+            <In label="看護師の診療科・病棟経験" name="nurse_specialty" form={form} set={set} />
+            <Sel label="現職の状況" name="employment_status" form={form} set={set} options={['在職中', '離職中']} />
+            <In label="退職予定日" name="resignation_date" type="date" form={form} set={set} />
+            <In label="転職活動の状況" name="job_search_status" form={form} set={set} placeholder="他社に応募中（2社）など" />
+            <In label="他社内定の回答期限" name="offer_deadline" type="date" form={form} set={set} hint="今日のタスクに表示されます" />
+            <In label="面接・職場見学が可能な曜日・時間帯" name="interview_availability" form={form} set={set} />
+            <Sel label="紹介先へ提供してよい情報の範囲" name="disclosure_scope" form={form} set={set} options={['氏名を伏せた概要のみ', '氏名を含めて提供可']} />
+          </div>
+          <Check label="オンコール可" name="oncall_ok" form={form} set={set} />
+          <Check label="JFT-Basic合格" name="jft_basic" form={form} set={set} />
+          <Check label="他の紹介会社を利用している" name="other_agencies" form={form} set={set} />
+          <Check label="現在の勤務先への在籍確認：可" name="current_employer_check" form={form} set={set} />
+          <TA label="勤務に制約のある曜日・時間帯（理由は不要）" name="unavailable_times" form={form} set={set} rows={2} />
+          <TA label="避けたい条件・譲れない条件" name="must_conditions" form={form} set={set} rows={2} />
+          <TA label="志望動機・転職理由" name="motivation" form={form} set={set} rows={3} />
+          <TA label="配慮してほしいこと（本人が任意で申し出た場合のみ。AIへは送信しません）" name="special_considerations" form={form} set={set} rows={2} />
         </Card>
       )}
 

@@ -82,3 +82,29 @@ test('未対応形式・古い形式はエラー', async () => {
   assert.equal((await uploadSheet(Buffer.from('x'), 'a.xls')).status, 400);
   assert.equal((await uploadSheet(Buffer.from('x'), 'a.txt')).status, 400);
 });
+
+test('ヒアリングシート形式：手当・勤務帯・優先順位・最低ラインを判定条件に反映', async () => {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('条件表');
+  ws.addRow(['項目', '記入欄', '記入例・選択肢']);
+  for (const r of [['氏名', 'シート 花子'], ['都道府県', '大阪府'], ['市区町村', '堺市'], ['希望職種', '介護職員・ヘルパー'],
+    ['希望雇用形態', '正社員'], ['希望勤務時間帯', '日勤のみ'], ['賃金形態', '月給'], ['希望給与', '25万'], ['希望賃金', '22万'],
+    ['必須の手当・待遇', '交通費支給,賞与あり'], ['休日・休暇の希望', '週休2日以上'], ['優先順位', '1.休日 2.給与 3.勤務地'],
+    ['運転免許', '普通（AT限定）'], ['現職の状況', '在職中'], ['退職予定日', '2026/11/30'], ['他社内定の回答期限', '2026/10/20'],
+    ['紹介先へ提供してよい情報の範囲', '氏名を伏せた概要のみ']]) ws.addRow([r[0], r[1], '例']);
+  const r = await uploadSheet(Buffer.from(await wb.xlsx.writeBuffer()), 'hearing.xlsx');
+  assert.equal(r.body.method, 'template');
+  const ap = await api('POST', `/api/drafts/${r.body.draftId}/approve`, { data: { fields: { ...r.body.data, consent_date: todayJst() } } });
+  assert.equal(ap.status, 200, JSON.stringify(ap.body));
+  const s = getDb().prepare('SELECT * FROM job_seekers WHERE id = ?').get(ap.body.resultId);
+  assert.equal(s.shift_ok, 0);
+  assert.equal(s.night_max_per_month, 0);
+  assert.equal(s.weight_profile, 'holiday');
+  assert.equal(s.priorities, '休日,給与,勤務地');
+  assert.equal(s.max_days_per_week, 5);
+  assert.equal(s.desired_wage_target, 250000);
+  assert.equal(s.desired_wage_min, 220000);
+  assert.equal(s.available_from, '2026-12-01');
+  assert.match(s.licenses, /普通自動車免許（AT限定）/);
+  assert.equal(s.disclosure_scope, '氏名を伏せた概要のみ');
+});
