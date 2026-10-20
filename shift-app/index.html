@@ -79,6 +79,7 @@ table.t input[type=number]{width:52px}
   <button data-p="part">④ 非常勤・個別条件</button>
   <button data-p="sheet">⑤ 勤務表・チェック</button>
   <button data-p="fte">⑥ 常勤換算</button>
+  <button data-p="master">⑦ マスタ・台帳</button>
 </nav>
 <main>
 <section id="p-import" class="pane">
@@ -99,6 +100,7 @@ table.t input[type=number]{width:52px}
 <section id="p-rules" class="pane"></section>
 <section id="p-part" class="pane"></section>
 <section id="p-fte" class="pane"></section>
+<section id="p-master" class="pane"></section>
 </main>
 <div id="pal"></div>
 
@@ -196,11 +198,58 @@ function importText(text){
   }
   S.fte = defaultFte(); const seenF = new Set();
   for (const t of S.staff){ initExtras(t, S); initFte(t, S, seenF); }
-  S.reqLimit = 2;
+  S.reqLimit = 2; S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); S.extraHol = [];
+  syncHolidays(S);
   resetNeeds(S);
   return S;
 }
 
+const pad2 = n => String(n).padStart(2, '0');
+const isoOf = (S, d) => `${S.y}-${pad2(S.m)}-${pad2(d + 1)}`;
+// 日本の祝日（2022年以降の通常ルール。2020・2021年の特例は未対応）
+function jpHolidays(y){
+  const H = {}, add = (m, d, n) => { H[`${y}-${pad2(m)}-${pad2(d)}`] = n; };
+  const nth = (m, n, dow) => 1 + ((dow - new Date(y, m - 1, 1).getDay() + 7) % 7) + 7 * (n - 1);
+  const eq = (a) => Math.floor(a + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+  add(1, 1, '元日'); add(1, nth(1, 2, 1), '成人の日'); add(2, 11, '建国記念の日'); add(2, 23, '天皇誕生日');
+  add(3, eq(20.8431), '春分の日'); add(4, 29, '昭和の日'); add(5, 3, '憲法記念日'); add(5, 4, 'みどりの日'); add(5, 5, 'こどもの日');
+  add(7, nth(7, 3, 1), '海の日'); add(8, 11, '山の日'); add(9, nth(9, 3, 1), '敬老の日'); add(9, eq(23.2488), '秋分の日');
+  add(10, nth(10, 2, 1), 'スポーツの日'); add(11, 3, '文化の日'); add(11, 23, '勤労感謝の日');
+  const key = dt => `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+  for (let dt = new Date(y, 0, 2); dt.getFullYear() === y; dt.setDate(dt.getDate() + 1)){
+    const prev = new Date(dt); prev.setDate(prev.getDate() - 1); const next = new Date(dt); next.setDate(next.getDate() + 1);
+    if (!H[key(dt)] && dt.getDay() !== 0 && H[key(prev)] && H[key(next)]) H[key(dt)] = '国民の休日';
+  }
+  for (const k of Object.keys(H).sort()){
+    const [yy, mm, dd] = k.split('-').map(Number), dt = new Date(yy, mm - 1, dd);
+    if (dt.getDay() !== 0 || H[k] === '振替休日') continue;
+    const n = new Date(dt); do { n.setDate(n.getDate() + 1); } while (H[key(n)]);
+    if (n.getFullYear() === y) H[key(n)] = '振替休日';
+  }
+  return H;
+}
+// 当月の祝日（国の祝日＋法人の追加休日）を S.holidays に反映
+function syncHolidays(S){
+  const H = jpHolidays(S.y), out = [];
+  const extra = (S.extraHol || []).map(x => x.date);
+  for (let d = 0; d < S.D; d++){ const k = isoOf(S, d); if (H[k] || extra.includes(k)) out.push(d + 1); }
+  S.holidays = out;
+}
+// 採用前・休職中・退職後は勤務を入れない
+function unavail(S, t, d){
+  const k = isoOf(S, d);
+  if (t.hireDate && k < t.hireDate) return true;
+  if (t.retireDate && k > t.retireDate) return true;
+  if (t.leaveStart && k >= t.leaveStart && (!t.leaveEnd || k <= t.leaveEnd)) return true;
+  return false;
+}
+const DEFAULT_COLORS = { '早': ['#c8e6c9', '', '早番'], '日': ['', '', '日勤'], '遅': ['#ffe0b2', '', '遅番'], '遅E': ['#ffcc80', '', '遅番E'],
+  '準夜勤': ['#ce93d8', '', '準夜勤'], '夜': ['#283593', '#ffffff', '夜勤'], '／': ['#9fa8da', '', '夜勤明け'], '公': ['#eef0f3', '#666666', '公休'],
+  '有休': ['#fff59d', '', '有給休暇'], 'リ休': ['#fff59d', '', 'リフレッシュ休暇'], '誕休': ['#fff59d', '', '誕生日休暇'], '研修': ['#fff59d', '', '研修'], '欠': ['#fff59d', '', '欠勤'] };
+function defaultColors(){
+  const o = {}; for (const k in DEFAULT_COLORS) o[k] = { bg: DEFAULT_COLORS[k][0], fg: DEFAULT_COLORS[k][1], name: DEFAULT_COLORS[k][2], code: '' };
+  return o;
+}
 const REQ_TYPES = ['希望休','有休','リ休','誕休','研修'];
 const dowOf = (S, d) => new Date(S.y, S.m - 1, d + 1).getDay();
 const weekOf = (S, d) => Math.floor((d + dowOf(S, 0)) / 7);
@@ -222,6 +271,9 @@ function inferPart(t, S){
            restSym: c.includes('公') ? '公' : '', perWeek: Math.max(1, ...Object.values(byWeek)) };
 }
 function initExtras(t, S){
+  if (t.hireDate === undefined){ t.hireDate = ''; t.retireDate = ''; t.leaveStart = ''; t.leaveEnd = ''; t.memo = ''; }
+  if (t.holidayOk === undefined) t.holidayOk = true;
+  if (t.canEarly === undefined){ t.canEarly = true; t.canDay = true; t.canLate = true; }
   if (t.nightFixed === undefined) t.nightFixed = null;
   if (!t.req){
     t.req = t.cells.map(c => cls(c) === 'leave' ? c : '');
@@ -251,7 +303,7 @@ function newMonth(S, y, m){
     if (carry){ t.cells[0] = '／'; t.pins[0] = true; }
   }
   S.sections.forEach(x => { x.D = D; });
-  S.y = y; S.m = m; S.D = D; S.holidays = [];
+  S.y = y; S.m = m; S.D = D; syncHolidays(S);
 }
 
 // ユニット型（3〜5階）の標準：最低＝早1・日1・遅1、目標＝平日 早1・日2・遅2／土日祝は最低と同じ
@@ -359,8 +411,10 @@ function validateAll(S){
     const secT = S.sections.find(x => x.id === t.sec).title;
     const rq = t.req.filter(r => r === '希望休').length;
     if (!t.reqExempt && S.reqLimit != null && rq > S.reqLimit){ out.push({ sev: 'W', unit: secT, s: t.id, d: -1, msg: `希望休が${rq}日（上限${S.reqLimit}日）` }); total += 12; }
+    t.cells.forEach((v, d) => { if (v && unavail(S, t, d)){ out.push({ sev: 'E', unit: secT, s: t.id, d, msg: '採用前・休職中・退職後の日に勤務が入っています' }); total += 100; } });
     if (t.auto || !t.part) continue;
     const sec = secT;
+    if (t.holidayOk === false) t.cells.forEach((v, d) => { if (cls(v) === 'work' && S.holidays.includes(d + 1)){ out.push({ sev: 'W', unit: sec, s: t.id, d, msg: '祝日出勤不可の職員に祝日の勤務が入っています' }); total += 12; } });
     t.cells.forEach((v, d) => {
       if (cls(v) === 'work' && !t.part.allowed[dowOf(S, d)]){ out.push({ sev: 'W', unit: sec, s: t.id, d, msg: '出勤可能曜日以外に勤務が入っています' }); total += 12; }
     });
@@ -375,6 +429,7 @@ function validateAll(S){
 // 自動作成
 function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
+const allowSym = (t, v) => v === '遅E' ? !!t.canE : v === '早' ? t.canEarly !== false : v === '日' ? t.canDay !== false : v === '遅' ? t.canLate !== false : true;
 function genUnit(U, S, di, mode, seed){
   const rnd = mulberry32(seed), D = S.D, max = S.maxConsec;
   const st = U.staff, n = st.length;
@@ -383,7 +438,9 @@ function genUnit(U, S, di, mode, seed){
   const scs = sh => scopesOf(U, sh).map(sc => ({ ...sc, idx: new Set(sc.members.map(m => st.indexOf(m))) }));
   // 作業用コピー
   const orig = st.map(t => t.cells.slice());
-  const lock = st.map((t, i) => t.cells.map((v, d) => d < t.from || t.pins[d] || cls(v) === 'leave' || (mode === 'fill' && v !== '') || (d === 0 && v === '／')));
+  const un = st.map(t => t.cells.map((v, d) => unavail(S, t, d)));
+  const lock = st.map((t, i) => t.cells.map((v, d) => un[i][d] || d < t.from || t.pins[d] || cls(v) === 'leave' || (mode === 'fill' && v !== '') || (d === 0 && v === '／')));
+  for (let i = 0; i < n; i++) for (let d = 0; d < D; d++) if (un[i][d]) st[i].cells[d] = '';
   for (let i = 0; i < n; i++) for (let d = 0; d < D; d++){
     if (lock[i][d] && st[i].cells[d] === '夜' && d + 1 < D){ lock[i][d+1] = true; st[i].cells[d+1] = '／'; }
   }
@@ -494,7 +551,7 @@ function genUnit(U, S, di, mode, seed){
         const cand = [];
         for (const i of sc.idx){
           if (!free(i, d)) continue;
-          if (sh === '遅E' && !st[i].canE) continue;
+          if (!allowSym(st[i], sh)) continue;
           const pv = d > 0 ? c[i][d-1] : '';
           if (sh === '早' && (pv === '遅' || pv === '遅E' || pv === '準夜勤')) continue;
           const pf = sh === '遅E' ? st[i].pref['遅'] : st[i].pref[sh];
@@ -505,7 +562,7 @@ function genUnit(U, S, di, mode, seed){
         c[cand[0][1]][d] = sh; k--;
       }
     }
-    for (let i = 0; i < n; i++) if (free(i, d)) c[i][d] = '日';
+    for (let i = 0; i < n; i++) if (free(i, d)) c[i][d] = ['日', '早', '遅'].find(x => allowSym(st[i], x)) || '日';
   }
   // 山登り法：休と勤務の入れかえで点数を下げる
   const movable = (i, d) => !lock[i][d] && ['早', '日', '遅', '遅E', '公'].includes(c[i][d]);
@@ -523,7 +580,7 @@ function genUnit(U, S, di, mode, seed){
       a = (rnd() * D) | 0;
       if (i === j || !movable(i, a) || !movable(j, a) || c[i][a] === c[j][a]) continue;
       if (c[i][a] === '公' || c[j][a] === '公') continue; // 公休数を崩さない
-      if (c[i][a] === '遅E' && !st[j].canE || c[j][a] === '遅E' && !st[i].canE) continue;
+      if (!allowSym(st[j], c[i][a]) || !allowSym(st[i], c[j][a])) continue;
       [c[i][a], c[j][a]] = [c[j][a], c[i][a]];
       const s2 = checkUnit(U, S, di, null);
       if (s2 <= cur) cur = s2; else [c[i][a], c[j][a]] = [c[j][a], c[i][a]];
@@ -536,10 +593,11 @@ function genUnit(U, S, di, mode, seed){
 // 非常勤・日勤職員：今までの働き方（記号・曜日・日数）を原則に出勤日を均等に配置
 function genPart(t, S, mode, seed){
   const rnd = mulberry32(seed), D = S.D, p = t.part, c = t.cells.slice();
-  const lock = c.map((v, d) => d < t.from || t.pins[d] || cls(v) === 'leave' || (mode === 'fill' && v !== ''));
-  for (let d = 0; d < D; d++) if (!lock[d]) c[d] = '';
+  const un = c.map((v, d) => unavail(S, t, d));
+  const lock = c.map((v, d) => un[d] || d < t.from || t.pins[d] || cls(v) === 'leave' || (mode === 'fill' && v !== ''));
+  for (let d = 0; d < D; d++) if (!lock[d] || un[d]) c[d] = '';
   const freeDays = [], allowedFree = [];
-  for (let d = 0; d < D; d++) if (!lock[d]){ freeDays.push(d); if (p.allowed[dowOf(S, d)]) allowedFree.push(d); }
+  for (let d = 0; d < D; d++) if (!lock[d]){ freeDays.push(d); if (p.allowed[dowOf(S, d)] && !(t.holidayOk === false && S.holidays.includes(d + 1))) allowedFree.push(d); }
   const lockedWork = c.filter((v, d) => lock[d] && cls(v) === 'work').length;
   const lockedRest = c.filter((v, d) => lock[d] && v === '公').length;
   const leaveNow = c.filter(v => cls(v) === 'leave').length;
@@ -663,7 +721,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
-function load(){ try { const j = localStorage.getItem(KEY); if (j){ S = JSON.parse(j); S.fte = S.fte || defaultFte(); { const sn = new Set(); S.staff.forEach(t => { initExtras(t, S); initFte(t, S, sn); }); } if (!S.minNeeds) S.minNeeds = JSON.parse(JSON.stringify(S.needs)); if (S.reqLimit === undefined) S.reqLimit = 2; } } catch (e) { S = null; } }
+function load(){ try { const j = localStorage.getItem(KEY); if (j){ S = JSON.parse(j); S.fte = S.fte || defaultFte(); { const sn = new Set(); S.staff.forEach(t => { initExtras(t, S); initFte(t, S, sn); }); } if (!S.minNeeds) S.minNeeds = JSON.parse(JSON.stringify(S.needs)); if (S.reqLimit === undefined) S.reqLimit = 2; if (!S.colors){ S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); } if (!S.extraHol) S.extraHol = []; } } catch (e) { S = null; } }
 
 function show(p){
   document.querySelectorAll('.pane').forEach(e => e.classList.toggle('on', e.id === 'p-' + p));
@@ -672,11 +730,17 @@ function show(p){
   if (p === 'req') renderReq();
   if (p === 'part') renderPart();
   if (p === 'fte') renderFte();
+  if (p === 'master') renderMaster();
   if (p === 'rules') renderRules();
   if (p === 'sheet') renderSheet();
 }
 function setStatus(msg){ $('#status').textContent = msg || ''; }
 
+function styleOf(v){
+  const c = S && S.colors && S.colors[v];
+  if (!c || (!c.bg && !c.fg)) return '';
+  return ` style="${c.bg ? 'background:' + c.bg + ';' : ''}${c.fg ? 'color:' + c.fg + ';' : ''}"`;
+}
 function cellClass(v){
   const k = cls(v);
   if (k === 'blank') return 'x';
@@ -713,7 +777,7 @@ function renderSheet(){
       h += `<tr><td class="nm">${esc(t.koyo)}　${esc(t.name)}${t.auto || t.part ? '' : ' <span class="note">手入力</span>'}</td>`;
       for (let d = 0; d < S.D; d++){
         const val = t.cells[d], k = t.id + ':' + d;
-        h += `<td class="c ${cellClass(val)} ${t.pins[d] ? 'pin' : ''} ${bad.get(k) || ''} ${d < t.from ? 'lock' : ''}" data-s="${t.id}" data-d="${d}" id="c${t.id}_${d}">${esc(val)}</td>`;
+        h += `<td class="c ${cellClass(val)} ${t.pins[d] ? 'pin' : ''} ${bad.get(k) || ''} ${d < t.from || unavail(S, t, d) ? 'lock' : ''}"${styleOf(val)} data-s="${t.id}" data-d="${d}" id="c${t.id}_${d}">${esc(val)}</td>`;
       }
       const k = s => t.cells.filter(c => c === s).length;
       const rb = issues.some(x => x.s === t.id && x.d === -1);
@@ -749,9 +813,9 @@ function renderRules(){
       }
       h += '</tr>';
     }
-    h += '</table><table class="t" style="margin:6px 0 14px"><tr><th>職員</th><th>夜勤可</th><th>準夜可</th><th>遅E可</th><th>公休数</th><th>夜回数（空欄＝均等）</th></tr>';
+    h += '</table><table class="t" style="margin:6px 0 14px"><tr><th>職員</th><th>公休数</th><th>夜回数（空欄＝均等）</th></tr>';
     for (const t of u.staff)
-      h += `<tr><td>${esc(t.label)} ${esc(t.name)}</td><td><input type="checkbox" data-st="${t.id}" data-f="canNight" ${t.canNight ? 'checked' : ''}></td><td><input type="checkbox" data-st="${t.id}" data-f="canJun" ${t.canJun ? 'checked' : ''}></td><td><input type="checkbox" data-st="${t.id}" data-f="canE" ${t.canE ? 'checked' : ''}></td><td><input type="number" data-st="${t.id}" data-f="target" value="${t.target}"></td><td><input type="number" data-st="${t.id}" data-f="nightFixed" value="${t.nightFixed == null ? '' : t.nightFixed}"></td></tr>`;
+      h += `<tr><td>${esc(t.label)} ${esc(t.name)}</td><td><input type="number" data-st="${t.id}" data-f="target" value="${t.target}"></td><td><input type="number" data-st="${t.id}" data-f="nightFixed" value="${t.nightFixed == null ? '' : t.nightFixed}"></td></tr>`;
     h += '</table>';
   }
   p.innerHTML = h;
@@ -790,11 +854,10 @@ function renderFte(){
   if (!S){ p.innerHTML = '<p class="note">先に「① 取込」を行ってください。</p>'; return; }
   const F = S.fte, R = calcFte(S), f2 = x => (Math.round(x * 100) / 100).toFixed(2), f1 = x => (Math.round(x * 10) / 10).toFixed(1);
   let h = `<p class="note">e3Shift「常勤換算値出力」と同じ考え方：<b>常勤換算値＝勤務時間合計÷1週間基本時間</b>（「1固定」の職員は1.0）。有休・特休等は常勤のみ勤務時間に加算、非常勤は含みません。兼務・出張用シフトは扱いません（同じ職員が複数部署に載る場合は部署ごとに別行で集計）。<b>試算です。制度上の常勤換算は、指定権者の解釈・施設の取扱いで確認してください。</b></p>`;
-  if (!F.confirmed) h += `<p class="bad"><b>勤務時間の初期値は仮置きです。</b>下の表を実際の時間に直してから <button id="bFteOk" class="pri">確認済みにする</button></p>`;
+  if (!F.confirmed) h += `<p class="bad"><b>勤務時間の初期値は仮置きです。</b>「⑦ マスタ・台帳」のシフト種別マスタで実際の時間に直してから <button id="bFteOk" class="pri">確認済みにする</button></p>`;
   h += `<h4>設定</h4><p>1週間基本時間（新規の既定）：<input type="number" id="fWeek" value="${F.weekHours}" style="width:60px">h　月の週数：<select id="fMethod"><option value="cal" ${F.method === 'cal' ? 'selected' : ''}>暦日数÷7（${f2(S.D / 7)}週）</option><option value="4" ${F.method === '4' ? 'selected' : ''}>4週固定</option></select>　夜勤時間帯：<input id="fNs" value="${F.night.s}" size="5">〜<input id="fNe" value="${F.night.e}" size="5">（例 17:00〜09:00）</p>
-  <table class="t"><tr><th>記号</th><th>開始</th><th>終了</th><th>休憩(h)</th><th>実働(h)</th></tr>`;
-  for (const k of Object.keys(F.hours)){ const sp = shiftSpan(k, S); h += `<tr><td>${k}</td><td><input data-fh="${k}" data-f="s" value="${F.hours[k].s}" size="5"></td><td><input data-fh="${k}" data-f="e" value="${F.hours[k].e}" size="5"></td><td><input type="number" step="0.25" data-fh="${k}" data-f="brk" value="${F.hours[k].brk}" style="width:60px"></td><td>${sp ? f2(sp.work) : '-'}</td></tr>`; }
-  h += `</table><p class="note">「9-15」のような時間表記は、そのまま（終了−開始）を実働とします（休憩は引きません）。休暇の扱い：` + Object.keys(F.leave).map(k => `${k}<select data-fl="${k}">${[['add', '常勤のみ加算'], ['work', '勤務扱い'], ['none', '算入しない']].map(o => `<option value="${o[0]}" ${F.leave[k] === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`).join(' ') + '</p>';
+  <p class="note">各シフトの時間は「⑦ マスタ・台帳」のシフト種別マスタで設定します。</p>`;
+  h += `<p class="note">「9-15」のような時間表記は、そのまま（終了−開始）を実働とします（休憩は引きません）。休暇の扱い：` + Object.keys(F.leave).map(k => `${k}<select data-fl="${k}">${[['add', '常勤のみ加算'], ['work', '勤務扱い'], ['none', '算入しない']].map(o => `<option value="${o[0]}" ${F.leave[k] === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`).join(' ') + '</p>';
   h += `<h4>集計</h4><table class="t"><tr><th>職種（部署）</th><th>常勤換算値 全体</th><th>常勤</th><th>非常勤</th></tr>`;
   let tot = { all: 0, full: 0, part: 0 };
   for (const k in R.job){ const g = R.job[k]; tot.all += g.all; tot.full += g.full; tot.part += g.part; h += `<tr><td>${esc(k)}</td><td>${f2(g.all)}</td><td>${f2(g.full)}</td><td>${f2(g.part)}</td></tr>`; }
@@ -809,6 +872,36 @@ function renderFte(){
   }
   h += '</table></div><p class="note">「時間不明」は、時間を設定していない記号（例：こもり、AM休）の件数で、勤務時間に含まれていません。</p>';
   p.innerHTML = h;
+}
+function renderMaster(){
+  const p = $('#p-master');
+  if (!S){ p.innerHTML = '<p class="note">先に「① 取込」を行ってください。</p>'; return; }
+  const H = jpHolidays(S.y), mk = `${S.y}-${pad2(S.m)}`;
+  let h = `<h4>カレンダー（${S.y}年${S.m}月）</h4><p class="note">祝日は国の祝日を自動で反映します（2020・2021年の特例は未対応）。法人の休日（年末年始など）は下で追加してください。祝日出勤不可の職員（台帳）は、祝日に非常勤配置をしません。</p>
+  <p>この月の祝日・休日：<b>${S.holidays.length ? S.holidays.map(d => `${S.m}/${d}`).join('、') : 'なし'}</b>　<button id="bSyncHol">カレンダーから反映し直す</button></p>
+  <p>${Object.keys(H).filter(k => k.startsWith(mk)).map(k => `${+k.slice(8)}日 ${H[k]}`).join('、') || '国の祝日：この月はありません'}</p>
+  <p>法人の追加休日：<input type="date" id="exDate"> <input id="exName" placeholder="名称（例 年末年始休業）" size="18"> <button id="bAddHol">追加</button>
+  ${(S.extraHol || []).map((x, i) => `<span style="margin-left:8px">${x.date} ${esc(x.name)} <button data-delhol="${i}">削除</button></span>`).join('')}</p>`;
+  h += `<h4>シフト種別マスタ</h4><p class="note">記号ごとの名称・色・時間・連携コードを管理します。<b>時間を変えると、常勤換算の確認済みが外れます。</b>連携コードは、勤怠システムへの出力用に保管します（現時点では出力に使いません）。「公」「／」などの時間は不要です。</p>
+  <table class="t"><tr><th>記号</th><th>名称</th><th>背景色</th><th>文字色</th><th>始業</th><th>終業</th><th>休憩(h)</th><th>実働(h)</th><th>連携コード</th></tr>`;
+  for (const k of S.shiftList){
+    const c = S.colors[k] || (S.colors[k] = { bg: '', fg: '', name: k, code: '' }), hh = S.fte.hours[k], sp = hh ? shiftSpan(k, S) : null;
+    const col = (f, v, dflt) => `<input type="color" data-sm="${esc(k)}" data-f="${f}" value="${v || dflt}">`;
+    h += `<tr><td style="${c.bg ? 'background:' + c.bg + ';' : ''}${c.fg ? 'color:' + c.fg : ''}"><b>${esc(k)}</b></td><td><input data-sm="${esc(k)}" data-f="name" value="${esc(c.name || '')}" size="12"></td><td>${col('bg', c.bg, '#ffffff')}</td><td>${col('fg', c.fg, '#222222')}</td>
+      <td><input data-sm="${esc(k)}" data-f="s" value="${hh ? hh.s : ''}" size="5" placeholder="08:30"></td><td><input data-sm="${esc(k)}" data-f="e" value="${hh ? hh.e : ''}" size="5" placeholder="17:30"></td><td><input type="number" step="0.25" data-sm="${esc(k)}" data-f="brk" value="${hh ? hh.brk : ''}" style="width:55px"></td><td>${sp ? (Math.round(sp.work * 100) / 100).toFixed(2) : '-'}</td><td><input data-sm="${esc(k)}" data-f="code" value="${esc(c.code || '')}" size="6"></td></tr>`;
+  }
+  h += `</table><p>シフトを追加：<input id="newSym" placeholder="記号（例 早B）" size="10"> <button id="bAddSym">追加</button></p>`;
+  h += `<h4>職員台帳</h4><p class="note">採用日・退職日・休職期間は、該当する日を自動で勤務対象外にします（空欄は制限なし）。「入れるシフト」は自動作成が参照します。休職・退職の期間に勤務が入っていると、エラーになります。</p>
+  <div style="overflow:auto;max-height:70vh"><table class="t"><tr><th>部署</th><th>職員</th><th>状況（今月）</th><th>採用日</th><th>退職日</th><th>休職開始</th><th>休職終了</th><th>祝日出勤可</th><th>早</th><th>日</th><th>遅</th><th>遅E</th><th>準夜</th><th>夜</th><th>備考</th></tr>`;
+  for (const t of S.staff){
+    const sec = S.sections.find(x => x.id === t.sec).title;
+    let na = 0; for (let d = 0; d < S.D; d++) if (unavail(S, t, d)) na++;
+    const st = na === 0 ? '全日対象' : na === S.D ? '全日対象外' : `${na}日対象外`;
+    const chk = f => `<td><input type="checkbox" data-ld="${t.id}" data-f="${f}" ${t[f] !== false ? 'checked' : ''}></td>`;
+    const dt = f => `<td><input type="date" data-ld="${t.id}" data-f="${f}" value="${t[f] || ''}"></td>`;
+    h += `<tr><td>${esc(sec)}</td><td>${esc(t.name)}</td><td class="${na ? 'bad' : ''}">${st}</td>${dt('hireDate')}${dt('retireDate')}${dt('leaveStart')}${dt('leaveEnd')}${chk('holidayOk')}${chk('canEarly')}${chk('canDay')}${chk('canLate')}<td><input type="checkbox" data-ld="${t.id}" data-f="canE" ${t.canE ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canJun" ${t.canJun ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canNight" ${t.canNight ? 'checked' : ''}></td><td><input data-ld="${t.id}" data-f="memo" value="${esc(t.memo || '')}" size="14"></td></tr>`;
+  }
+  p.innerHTML = h + '</table></div>';
 }
 function renderPart(){
   const p = $('#p-part');
@@ -862,6 +955,7 @@ $('#bSample').onclick = () => {
     minNeeds: {}, reqLimit: 2,
     needs: { '2階/AB': { '早': nd(2, 1), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(1, 1) }, '2階/CD': { '早': nd(2, 1), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(1, 1) }, '2階/*': { '遅E': nd(1, 1), '準夜勤': nd(1, 1) } } };
   S.minNeeds = JSON.parse(JSON.stringify(S.needs));
+  S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); S.extraHol = []; syncHolidays(S);
   { const sn = new Set(); S.staff.forEach(t => { initExtras(t, S); initFte(t, S, sn); }); }
   S.staff.forEach(t => { t.req = t.cells.map(c => c); t.reqApplied = t.req.map(r => !!r); });
   generateAll(S, 'rebuild'); save(); curSec = 'all'; show('sheet');
@@ -896,7 +990,7 @@ $('#bView').onclick = () => {
   for (const sec of S.sections){
     t += `<tr><th colspan="${S.D + 1}" class="sec">${esc(sec.title)}</th></tr>`;
     for (const x of S.staff.filter(z => z.sec === sec.id))
-      t += `<tr><td class="nm">${esc(x.label)} ${esc(x.name)}</td>` + x.cells.map(v => `<td class="${cellClass(v)}">${esc(v)}</td>`).join('') + '</tr>';
+      t += `<tr><td class="nm">${esc(x.label)} ${esc(x.name)}</td>` + x.cells.map(v => `<td class="${cellClass(v)}"${styleOf(v)}>${esc(v)}</td>`).join('') + '</tr>';
   }
   t += '</tbody></table>';
   const css = document.querySelector('style').textContent;
@@ -909,7 +1003,8 @@ $('#bView').onclick = () => {
 $('#bPrint').onclick = () => { show('sheet'); window.print(); };
 
 const pal = $('#pal'); let palTarget = null;
-pal.innerHTML = PALETTE.map(p => `<button data-v="${p}">${p || '消去'}</button>`).join('');
+function buildPalette(){ pal.innerHTML = ((S && S.shiftList) || PALETTE).concat('').map(p => `<button data-v="${p}">${p || '消去'}</button>`).join(''); }
+buildPalette();
 pal.onclick = e => {
   const b = e.target.closest('button'); if (!b || !palTarget) return;
   const t = S.staff[palTarget.s], v = b.dataset.v, d = palTarget.d;
@@ -923,7 +1018,7 @@ document.addEventListener('click', e => {
   if (td && td.closest('#grid')){
     const s = +td.dataset.s, d = +td.dataset.d;
     if (e.shiftKey){ S.staff[s].pins[d] = !S.staff[s].pins[d]; save(); renderSheet(); return; }
-    palTarget = { s, d };
+    palTarget = { s, d }; buildPalette();
     const r = td.getBoundingClientRect();
     pal.style.display = 'block';
     pal.style.left = Math.min(r.left, innerWidth - 240) + 'px';
@@ -940,6 +1035,13 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.dataset.sm){
+    const k = t.dataset.sm, f = t.dataset.f;
+    if (['s', 'e', 'brk'].includes(f)){ const hh = S.fte.hours[k] = S.fte.hours[k] || { s: '', e: '', brk: 0 }; hh[f] = f === 'brk' ? (+t.value || 0) : t.value; S.fte.confirmed = false; }
+    else S.colors[k][f] = t.value;
+    save(); renderMaster(); return;
+  }
+  if (t.dataset.ld){ const x = S.staff[+t.dataset.ld], f = t.dataset.f; x[f] = t.type === 'checkbox' ? t.checked : t.value; save(); if (t.type !== 'checkbox' && f !== 'memo') renderMaster(); return; }
   if (t.dataset.fte){ const q = S.staff[+t.dataset.fte].fte, f = t.dataset.f; q[f] = f === 'week' ? (+t.value || 0) : t.value; save(); renderFte(); return; }
   if (t.dataset.fh){ const hh = S.fte.hours[t.dataset.fh]; hh[t.dataset.f] = t.dataset.f === 'brk' ? (+t.value || 0) : t.value; S.fte.confirmed = false; save(); renderFte(); return; }
   if (t.dataset.fl){ S.fte.leave[t.dataset.fl] = t.value; save(); renderFte(); return; }
@@ -975,6 +1077,18 @@ document.addEventListener('click', e => {
     $('#rc' + t.id).textContent = rcn; $('#rc' + t.id).className = 'sum' + (!t.reqExempt && rcn > S.reqLimit ? ' bad' : '');
     $('#rl' + t.id).textContent = t.req.filter(x => x && x !== '希望休').length;
     return;
+  }
+  if (e.target.id === 'bSyncHol' && S){ syncHolidays(S); save(); renderMaster(); return; }
+  if (e.target.id === 'bAddHol' && S){
+    const d = $('#exDate').value, n = $('#exName').value.trim();
+    if (!d) return alert('日付を入力してください');
+    S.extraHol.push({ date: d, name: n || '法人休日' }); syncHolidays(S); save(); renderMaster(); return;
+  }
+  if (e.target.dataset && e.target.dataset.delhol !== undefined && S){ S.extraHol.splice(+e.target.dataset.delhol, 1); syncHolidays(S); save(); renderMaster(); return; }
+  if (e.target.id === 'bAddSym' && S){
+    const k = $('#newSym').value.trim();
+    if (!k || S.shiftList.includes(k)) return alert('未登録の記号を入力してください');
+    S.shiftList.push(k); S.colors[k] = { bg: '', fg: '', name: k, code: '' }; save(); renderMaster(); return;
   }
   if (e.target.id === 'bFteOk' && S){ S.fte.confirmed = true; save(); renderFte(); return; }
   if (e.target.id === 'bNewMonth' && S){
