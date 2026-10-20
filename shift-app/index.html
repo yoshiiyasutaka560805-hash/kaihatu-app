@@ -78,7 +78,7 @@ table.t input[type=number]{width:52px}
 <section id="p-import" class="pane">
   <p class="note">Excelの勤務表を<b>範囲選択→コピー→下の枠に貼り付け</b>（タブ区切り）。見出し行は「No／氏名／1〜31」の行と曜日行が必要です。職員名等の個人情報はこの端末のブラウザ内にのみ保存され、外部へ送信されません。</p>
   <textarea id="paste" placeholder="ここに貼り付け"></textarea>
-  <p><button id="bImport" class="pri">取り込む</button> <button id="bClear">保存データを消す</button></p>
+  <p><button id="bImport" class="pri">取り込む</button> <button id="bSample">架空データで試す</button> <button id="bClear">保存データを消す</button></p>
   <div id="importMsg" class="note"></div>
 </section>
 <section id="p-sheet" class="pane">
@@ -550,6 +550,23 @@ $('#bImport').onclick = () => {
     $('#importMsg').textContent = `取込完了：${S.y}年${S.m}月・${S.sections.length}部署・${S.staff.length}名。自動作成の対象：${au || 'なし'}`;
     setStatus('');
   } catch (e) { $('#importMsg').textContent = '取込できません：' + e.message; }
+};
+$('#bSample').onclick = () => {
+  const labels = ['AB', 'CD'], names = ['青木', '井上', '上田', '江口', '小川', '加藤', '木村', '工藤', '近藤', '佐々木', '清水', '鈴木'];
+  const D = 31, staff = [];
+  names.forEach((n, i) => {
+    const cells = Array(D).fill('');
+    if (i % 4 === 1) cells[6] = cells[7] = cells[8] = '有休';
+    if (i % 5 === 2) cells[19] = 'リ休';
+    staff.push({ id: i, sec: 0, label: labels[i % 2], koyo: i % 3 ? '常' : '特', name: n + '（例）', cells, auto: true, unit: '2階/' + labels[i % 2],
+      from: 0, canNight: i !== 5, canJun: i % 2 === 0, canE: i % 3 !== 1, target: 10, nightTarget: 3,
+      pref: { '早': 4, '日': 3, '遅': 3 }, pins: cells.map(c => c !== '') });
+  });
+  const nd = (a, b) => ({ wk: a, we: b });
+  S = { y: 2026, m: 10, D, holidays: [12], maxConsec: 5, sections: [{ id: 0, title: '2階', D, auto: true }], staff,
+    needs: { '2階/AB': { '早': nd(2, 1), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(1, 1) }, '2階/CD': { '早': nd(2, 1), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(1, 1) }, '2階/*': { '遅E': nd(1, 1), '準夜勤': nd(1, 1) } } };
+  generateAll(S, 'rebuild'); save(); curSec = 'all'; show('sheet');
+  setStatus('架空データ（例）です。マスをクリックして直したり、③で人数を変えて再作成できます');
 };
 $('#bClear').onclick = () => { if (confirm('保存データを削除します。よろしいですか？')){ try { localStorage.removeItem(KEY); } catch (e) {} S = null; $('#importMsg').textContent = '削除しました'; } };
 $('#secSel').onchange = e => { curSec = e.target.value; renderSheet(); };
