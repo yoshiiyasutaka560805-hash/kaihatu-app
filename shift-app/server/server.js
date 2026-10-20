@@ -225,6 +225,8 @@ async function handle(req, res) {
 
   if (method === 'GET' && (p === '/' || p === '/index.html')) {
     let html; try { html = fs.readFileSync(INDEX, 'utf8'); } catch (e) { return err(res, 500, 'no_index', 'index.html がありません'); }
+    // 単体HTML内のCSP(meta)は connect-src 'none' のため、配信時のみサーバーのCSPに置換（file:// 利用時の厳格設定は変えない）
+    html = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/i, `<meta http-equiv="Content-Security-Policy" content="${SEC_HEADERS['Content-Security-Policy']}">`);
     return send(res, 200, html);
   }
   if (p === '/favicon.ico') { res.writeHead(204, SEC_HEADERS); return res.end(); }
