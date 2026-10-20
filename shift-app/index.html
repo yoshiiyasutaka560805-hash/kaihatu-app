@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; form-action 'none'">
+<meta name="robots" content="noindex,nofollow">
 <title>勤務表 半自動作成</title>
 <style>
 :root{--bg:#f6f7f9;--fg:#1d2330;--line:#c9ced8;--hd:#e6e9ef;--err:#d93025;--warn:#f29900;--accent:#1a56c4}
@@ -64,6 +66,7 @@ table.t input[type=number]{width:52px}
   <button id="bFill">空欄だけ埋める</button>
   <button id="bCopy">Excel用にコピー</button>
   <button id="bPrint">印刷</button>
+  <button id="bView">閲覧用ファイルを保存</button>
   <span id="status" class="note"></span>
 </header>
 <nav>
@@ -569,6 +572,23 @@ $('#bCopy').onclick = async () => {
   const tsv = toTSV(S);
   try { await navigator.clipboard.writeText(tsv); setStatus('コピーしました。Excelに貼り付けてください'); }
   catch (e) { const ta = document.createElement('textarea'); ta.value = tsv; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); setStatus('コピーしました'); }
+};
+$('#bView').onclick = () => {
+  if (!S) return;
+  const di = dayInfo(S), DOW = '日月火水木金土';
+  let t = '<table><thead><tr><th>氏名</th>' + di.wd.map((w, d) => `<th class="w${w}">${d + 1}<br>${DOW[w]}</th>`).join('') + '</tr></thead><tbody>';
+  for (const sec of S.sections){
+    t += `<tr><th colspan="${S.D + 1}" class="sec">${esc(sec.title)}</th></tr>`;
+    for (const x of S.staff.filter(z => z.sec === sec.id))
+      t += `<tr><td class="nm">${esc(x.label)} ${esc(x.name)}</td>` + x.cells.map(v => `<td class="${cellClass(v)}">${esc(v)}</td>`).join('') + '</tr>';
+  }
+  t += '</tbody></table>';
+  const css = document.querySelector('style').textContent;
+  const doc = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><meta name="robots" content="noindex,nofollow"><title>勤務表 ${S.y}年${S.m}月（閲覧用）</title><style>${css}table{border-collapse:collapse;font-size:12px}th,td{border:1px solid #c9ced8;min-width:28px;text-align:center;height:22px}td.nm{text-align:left;padding:0 6px;white-space:nowrap}th.sec{background:#dfe6f5;text-align:left}th.w6{color:#1565c0}th.w0{color:#d93025}td.c{cursor:default}</style></head><body><main><h3>勤務表 ${S.y}年${S.m}月（閲覧専用・${new Date().toLocaleString('ja-JP')}作成）</h3>${t}</main></body></html>`.replace(/<td class="(\w+)">/g, '<td class="c $1">');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([doc], { type: 'text/html' }));
+  a.download = `勤務表_${S.y}-${String(S.m).padStart(2, '0')}_閲覧用.html`;
+  a.click(); setStatus('閲覧用ファイルを保存しました。共有フォルダに置いてください');
 };
 $('#bPrint').onclick = () => { show('sheet'); window.print(); };
 
