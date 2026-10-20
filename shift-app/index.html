@@ -190,7 +190,8 @@ function importText(text){
     if (t.cells.some(c => cls(c) === 'leave')) t.cells.forEach((c, d) => { if (cls(c) === 'leave') t.pins[d] = true; });
   }
   for (const t of S.staff) initExtras(t, S);
-  S.needs = inferNeeds(S);
+  S.reqLimit = 2;
+  resetNeeds(S);
   return S;
 }
 
@@ -220,6 +221,7 @@ function initExtras(t, S){
     t.req = t.cells.map(c => cls(c) === 'leave' ? c : '');
     t.reqApplied = t.req.map(r => !!r);
   }
+  if (t.reqExempt === undefined) t.reqExempt = /非|学生|アルバイト/.test(t.koyo || '');
   if (t.histLeave === undefined) t.histLeave = t.cells.filter(c => cls(c) === 'leave').length;
   if (!t.auto && t.part === undefined) t.part = inferPart(t, S);
 }
@@ -246,6 +248,22 @@ function newMonth(S, y, m){
   S.y = y; S.m = m; S.D = D; S.holidays = [];
 }
 
+// ユニット型（3〜5階）の標準：最低＝早1・日1・遅1、目標＝平日 早1・日2・遅2／土日祝は最低と同じ
+function applyUnitPreset(S){
+  for (const U of unitsOf(S)){
+    if (!/^[3-5]階/.test(U.key)) continue;
+    for (const l of U.labels){
+      const k = U.key + '/' + l;
+      S.needs[k] = Object.assign(S.needs[k] || {}, { '早': { wk: 1, we: 1 }, '日': { wk: 2, we: 1 }, '遅': { wk: 2, we: 1 } });
+      S.minNeeds[k] = Object.assign(S.minNeeds[k] || {}, { '早': { wk: 1, we: 1 }, '日': { wk: 1, we: 1 }, '遅': { wk: 1, we: 1 } });
+    }
+  }
+}
+function resetNeeds(S){
+  S.needs = inferNeeds(S);
+  S.minNeeds = JSON.parse(JSON.stringify(S.needs));
+  applyUnitPreset(S);
+}
 function dayInfo(S){
   const wd = [], cl = [];
   for (let d = 0; d < S.D; d++){
@@ -294,7 +312,7 @@ function inferNeeds(S){
 // ルールチェック（自動作成の点数づけと画面表示で共用）
 function checkUnit(U, S, di, out){
   let score = 0; const D = S.D, max = S.maxConsec;
-  const add = (sev, t, d, msg) => { score += sev === 'E' ? 100 : 12; if (out) out.push({ sev, unit: U.key, s: t ? t.id : -1, d, msg }); };
+  const add = (sev, t, d, msg, w) => { score += sev === 'E' ? 100 : (w || 12); if (out) out.push({ sev, unit: U.key, s: t ? t.id : -1, d, msg }); };
   for (const t of U.staff){
     const c = t.cells; let run = 0, rest = 0;
     for (let d = 0; d < D; d++){
@@ -315,9 +333,11 @@ function checkUnit(U, S, di, out){
   for (let d = 0; d < D; d++){
     for (const sh of SHIFTS) for (const sc of scopesOf(U, sh)){
       const need = ((S.needs[sc.key] || {})[sh] || {})[di.cl[d]] || 0;
+      const mn = Math.min(need, (((S.minNeeds || {})[sc.key] || {})[sh] || {})[di.cl[d]] ?? need);
       const n = sc.members.reduce((a, t) => a + (t.cells[d] === sh ? 1 : 0), 0);
       const nm = (sc.label ? sc.label + ' ' : '') + sh;
-      if (n < need) add(sh === '日' ? 'W' : 'E', null, d, `${nm}が${n}人（必要${need}人）`);
+      if (n < mn) add('E', null, d, `${nm}が${n}人（最低${mn}人）`);
+      else if (n < need) add('W', null, d, `${nm}が${n}人（目標${need}人）`, 5 * (need - n));
       else if (n > need && sh !== '日') add('W', null, d, `${nm}が${n}人（必要${need}人）で多い`);
     }
   }
@@ -329,8 +349,11 @@ function validateAll(S){
   const di = dayInfo(S), out = []; let total = 0;
   for (const u of unitsOf(S)) total += checkUnit(u, S, di, out);
   for (const t of S.staff){
+    const secT = S.sections.find(x => x.id === t.sec).title;
+    const rq = t.req.filter(r => r === '希望休').length;
+    if (!t.reqExempt && S.reqLimit != null && rq > S.reqLimit){ out.push({ sev: 'W', unit: secT, s: t.id, d: -1, msg: `希望休が${rq}日（上限${S.reqLimit}日）` }); total += 12; }
     if (t.auto || !t.part) continue;
-    const sec = S.sections.find(x => x.id === t.sec).title;
+    const sec = secT;
     t.cells.forEach((v, d) => {
       if (cls(v) === 'work' && !t.part.allowed[dowOf(S, d)]){ out.push({ sev: 'W', unit: sec, s: t.id, d, msg: '出勤可能曜日以外に勤務が入っています' }); total += 12; }
     });
@@ -349,6 +372,7 @@ function genUnit(U, S, di, mode, seed){
   const rnd = mulberry32(seed), D = S.D, max = S.maxConsec;
   const st = U.staff, n = st.length;
   const needS = (sc, sh, d) => ((S.needs[sc.key] || {})[sh] || {})[di.cl[d]] || 0;
+  const minS = (sc, sh, d) => Math.min(needS(sc, sh, d), (((S.minNeeds || {})[sc.key] || {})[sh] || {})[di.cl[d]] ?? needS(sc, sh, d));
   const scs = sh => scopesOf(U, sh).map(sc => ({ ...sc, idx: new Set(sc.members.map(m => st.indexOf(m))) }));
   // 作業用コピー
   const orig = st.map(t => t.cells.slice());
@@ -457,8 +481,8 @@ function genUnit(U, S, di, mode, seed){
   }
   // 日勤帯
   for (let d = 0; d < D; d++){
-    for (const sh of ['遅E', '遅', '早', '日']) for (const sc of scs(sh)){
-      let k = needS(sc, sh, d) - haveS(sc, sh, d);
+    for (const pass of [0, 1]) for (const sh of ['遅E', '遅', '早', '日']) for (const sc of scs(sh)){
+      let k = (pass === 0 ? minS(sc, sh, d) : needS(sc, sh, d)) - haveS(sc, sh, d);
       while (k > 0){
         const cand = [];
         for (const i of sc.idx){
@@ -574,7 +598,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
-function load(){ try { const j = localStorage.getItem(KEY); if (j){ S = JSON.parse(j); S.staff.forEach(t => initExtras(t, S)); } } catch (e) { S = null; } }
+function load(){ try { const j = localStorage.getItem(KEY); if (j){ S = JSON.parse(j); S.staff.forEach(t => initExtras(t, S)); if (!S.minNeeds) S.minNeeds = JSON.parse(JSON.stringify(S.needs)); if (S.reqLimit === undefined) S.reqLimit = 2; } } catch (e) { S = null; } }
 
 function show(p){
   document.querySelectorAll('.pane').forEach(e => e.classList.toggle('on', e.id === 'p-' + p));
@@ -646,16 +670,16 @@ function unitSecId(unit){ const s = S.sections.find(x => x.title === unit && x.a
 function renderRules(){
   const p = $('#p-rules');
   if (!S){ p.innerHTML = '<p class="note">先に取込を行ってください。</p>'; return; }
-  let h = `<p class="note">必要人数は取込時の表から「最頻値」で推定した値です。<b>実際のルールと違う箇所は修正</b>してください（0＝その勤務は不要）。</p>
-  <p>連続勤務の上限：<input type="number" id="maxC" min="3" max="10" value="${S.maxConsec}"> 日　　祝日（日にち・カンマ区切り）：<input id="hol" value="${S.holidays.join(',')}" placeholder="例 12"> <button id="bRe">必要人数を現在の表から再推定</button></p>`;
+  let h = `<p class="note">「目標」は余力があるときに目指す人数、「最低」はこれを下回るとエラーにする人数です。3〜5階（ユニット型）は 最低＝早1・日1・遅1、目標＝平日 早1・日2・遅2（土日祝は最低と同じ）を初期値にしています。2階（従来型）と夜勤・準夜勤・遅Eは取込んだ表からの推定値です。<b>違う箇所は修正</b>してください。</p>
+  <p>連続勤務の上限：<input type="number" id="maxC" min="3" max="10" value="${S.maxConsec}"> 日　　祝日（日にち・カンマ区切り）：<input id="hol" value="${S.holidays.join(',')}" placeholder="例 12"> <button id="bRe">人数を初期値に戻す（表から推定＋ユニット型の標準）</button></p>`;
   for (const u of unitsOf(S)){
     h += `<h4>${esc(u.key)}</h4><table class="t"><tr><th>区分</th><th>日</th>${SHIFTS.map(sh => `<th>${sh}</th>`).join('')}</tr>`;
     const rows = [...u.labels.map(l => [u.key + '/' + l, l || '全体']), [u.key + '/*', 'フロア共通']];
-    for (const [key, name] of rows) for (const c of [['wk', '平日'], ['we', '土日祝']]){
-      h += `<tr><td>${esc(name)}</td><td>${c[1]}</td>`;
+    for (const [key, name] of rows) for (const c of [['wk', '平日', 'needs', '目標'], ['wk', '平日', 'minNeeds', '最低'], ['we', '土日祝', 'needs', '目標'], ['we', '土日祝', 'minNeeds', '最低']]){
+      h += `<tr><td>${esc(name)}</td><td>${c[1]}（${c[3]}）</td>`;
       for (const sh of SHIFTS){
         const ok = FLOOR_SHIFTS.includes(sh) === key.endsWith('/*');
-        h += ok && S.needs[key] && S.needs[key][sh] ? `<td><input type="number" min="0" max="9" data-nu="${esc(key)}" data-sh="${sh}" data-c="${c[0]}" value="${S.needs[key][sh][c[0]]}"></td>` : '<td style="background:#eee"></td>';
+        h += ok && S[c[2]][key] && S[c[2]][key][sh] ? `<td><input type="number" min="0" max="9" data-nu="${esc(key)}" data-src="${c[2]}" data-sh="${sh}" data-c="${c[0]}" value="${S[c[2]][key][sh][c[0]]}"></td>` : '<td style="background:#eee"></td>';
       }
       h += '</tr>';
     }
@@ -678,19 +702,19 @@ function renderReq(){
   const p = $('#p-req');
   if (!S){ p.innerHTML = '<p class="note">先に「① 取込」を行ってください。</p>'; return; }
   const di = dayInfo(S), DOW = '日月火水木金土', ABBR = { '希望休': '休', '有休': '有', 'リ休': 'リ', '誕休': '誕', '研修': '研' };
-  let h = `<p class="note">${S.y}年${S.m}月の希望休を入力します（1〜10日に集計した分）。<b>マスをクリックするたびに 希望休→有休→リ休→誕休→研修→消去</b> と切り替わります。入力したものは「シフト作成」で固定され、公休数に数えられます（有休等は公休とは別）。</p>
+  let h = `<p>希望休の上限：<input type="number" id="reqLim" min="0" max="31" value="${S.reqLimit}" style="width:50px"> 日（「上限なし」に印をした非常勤パート等は対象外）</p><p class="note">${S.y}年${S.m}月の希望休を入力します（1〜10日に集計した分）。<b>マスをクリックするたびに 希望休→有休→リ休→誕休→研修→消去</b> と切り替わります。入力したものは「シフト作成」で固定され、公休数に数えられます（有休等は公休とは別）。</p>
   <div class="gridwrap" style="max-height:calc(100vh - 230px)"><table class="g"><thead><tr><th class="nm">氏名</th>`;
   for (let d = 0; d < S.D; d++) h += `<th class="we-${di.wd[d]} ${S.holidays.includes(d + 1) ? 'hol' : ''}">${d + 1}<br>${DOW[di.wd[d]]}</th>`;
-  h += '<th>希望休</th><th>休暇</th></tr></thead><tbody>';
+  h += '<th>希望休</th><th>休暇</th><th>上限なし</th></tr></thead><tbody>';
   for (const sec of S.sections){
-    h += `<tr><td class="nm" colspan="${S.D + 3}" style="background:#dfe6f5;font-weight:bold">${esc(sec.title)}</td></tr>`;
+    h += `<tr><td class="nm" colspan="${S.D + 4}" style="background:#dfe6f5;font-weight:bold">${esc(sec.title)}</td></tr>`;
     for (const t of S.staff.filter(x => x.sec === sec.id)){
       h += `<tr><td class="nm">${esc(t.koyo)}　${esc(t.name)}</td>`;
       for (let d = 0; d < S.D; d++){
         const r = t.req[d];
         h += `<td class="c ${r === '希望休' ? 'off' : r ? 'lv' : ''}" data-rs="${t.id}" data-rd="${d}">${r ? ABBR[r] : ''}</td>`;
       }
-      h += `<td class="sum" id="rc${t.id}">${t.req.filter(r => r === '希望休').length}</td><td class="sum" id="rl${t.id}">${t.req.filter(r => r && r !== '希望休').length}</td></tr>`;
+      h += `<td class="sum ${!t.reqExempt && t.req.filter(r => r === '希望休').length > S.reqLimit ? 'bad' : ''}" id="rc${t.id}">${t.req.filter(r => r === '希望休').length}</td><td class="sum" id="rl${t.id}">${t.req.filter(r => r && r !== '希望休').length}</td><td class="sum"><input type="checkbox" data-ex="${t.id}" ${t.reqExempt ? 'checked' : ''}></td></tr>`;
     }
   }
   p.innerHTML = h + '</tbody></table></div>';
@@ -743,7 +767,9 @@ $('#bSample').onclick = () => {
   });
   const nd = (a, b) => ({ wk: a, we: b });
   S = { y: 2026, m: 10, D, holidays: [12], maxConsec: 5, sections: [{ id: 0, title: '2階', D, auto: true }], staff,
+    minNeeds: {}, reqLimit: 2,
     needs: { '2階/AB': { '早': nd(2, 1), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(1, 1) }, '2階/CD': { '早': nd(2, 1), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(1, 1) }, '2階/*': { '遅E': nd(1, 1), '準夜勤': nd(1, 1) } } };
+  S.minNeeds = JSON.parse(JSON.stringify(S.needs));
   S.staff.forEach(t => initExtras(t, S));
   S.staff.forEach(t => { t.req = t.cells.map(c => c); t.reqApplied = t.req.map(r => !!r); });
   generateAll(S, 'rebuild'); save(); curSec = 'all'; show('sheet');
@@ -822,6 +848,8 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.id === 'reqLim'){ S.reqLimit = Math.max(0, +t.value || 0); save(); renderReq(); return; }
+  if (t.dataset.ex){ S.staff[+t.dataset.ex].reqExempt = t.checked; save(); renderReq(); return; }
   if (t.dataset.pt){
     const q = S.staff[+t.dataset.pt].part, f = t.dataset.f;
     if (f === 'allowed') q.allowed[+t.dataset.w] = t.checked;
@@ -831,7 +859,7 @@ document.addEventListener('change', e => {
   }
   if (t.id === 'maxC'){ S.maxConsec = Math.max(3, +t.value || 5); save(); return; }
   if (t.id === 'hol'){ S.holidays = t.value.split(/[,、\s]+/).map(Number).filter(n => n >= 1 && n <= 31); save(); return; }
-  if (t.dataset.nu){ S.needs[t.dataset.nu][t.dataset.sh][t.dataset.c] = Math.max(0, +t.value || 0); save(); return; }
+  if (t.dataset.nu){ S[t.dataset.src][t.dataset.nu][t.dataset.sh][t.dataset.c] = Math.max(0, +t.value || 0); save(); return; }
   if (t.dataset.st){
     const s = S.staff[+t.dataset.st], f = t.dataset.f;
     s[f] = t.type === 'checkbox' ? t.checked : (t.value === '' && f === 'nightFixed' ? null : (+t.value || 0)); save();
@@ -845,7 +873,8 @@ document.addEventListener('click', e => {
     const r = t.req[d]; save();
     rc.className = 'c ' + (r === '希望休' ? 'off' : r ? 'lv' : '');
     rc.textContent = r ? { '希望休': '休', '有休': '有', 'リ休': 'リ', '誕休': '誕', '研修': '研' }[r] : '';
-    $('#rc' + t.id).textContent = t.req.filter(x => x === '希望休').length;
+    const rcn = t.req.filter(x => x === '希望休').length;
+    $('#rc' + t.id).textContent = rcn; $('#rc' + t.id).className = 'sum' + (!t.reqExempt && rcn > S.reqLimit ? ' bad' : '');
     $('#rl' + t.id).textContent = t.req.filter(x => x && x !== '希望休').length;
     return;
   }
@@ -856,7 +885,7 @@ document.addEventListener('click', e => {
     newMonth(S, y, m); save(); curSec = 'all'; show('req'); setStatus(`${y}年${m}月を開始しました。希望休を入力してください`);
     return;
   }
-  if (e.target.id === 'bRe' && S){ S.needs = inferNeeds(S); save(); renderRules(); }
+  if (e.target.id === 'bRe' && S){ resetNeeds(S); save(); renderRules(); }
 });
 load(); show(S ? 'sheet' : 'import');
 </script>
