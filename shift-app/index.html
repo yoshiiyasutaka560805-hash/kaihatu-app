@@ -7,19 +7,22 @@
 <meta name="robots" content="noindex,nofollow">
 <title>勤務表 半自動作成</title>
 <style>
-:root{/* 見た目の変更はここだけ：法人サイトの配色に合わせる場合はこの値を差し替える */--bg:#f6f7f9;--fg:#1d2330;--line:#c9ced8;--hd:#e6e9ef;--band:#dfe6f5;--surface:#fff;--err:#d93025;--warn:#f29900;--accent:#1a56c4;--accent-fg:#fff}
+:root{/* 見た目の変更はここだけ：法人サイトの配色に合わせる場合はこの値を差し替える */--bg:#f6f6f6;--fg:#222;--line:#d6d6d6;--hd:#ececec;--band:#e8eee4;--surface:#fff;--err:#d93025;--warn:#f29900;--accent:#2b2e33;--accent-fg:#fff;--focus:#6a9a3a}
 *{box-sizing:border-box}
-body{margin:0;font:13px/1.4 "Hiragino Sans","Yu Gothic UI",Meiryo,sans-serif;background:var(--bg);color:var(--fg)}
+body{margin:0;letter-spacing:.04em;font:13px/1.5 "Hiragino Sans","Yu Gothic UI",Meiryo,sans-serif;background:var(--bg);color:var(--fg)}
 header{position:sticky;top:0;z-index:30;background:var(--surface);border-bottom:1px solid var(--line);padding:8px 12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-header h1{font-size:15px;margin:0 10px 0 0}
-button,select{font:inherit;padding:5px 10px;border:1px solid var(--line);background:var(--surface);border-radius:5px;cursor:pointer}
+header h1{font-size:15px;margin:0 14px 0 0;letter-spacing:.3em;font-weight:600;padding-left:10px;border-left:3px solid #e8a33d;line-height:1.2}
+header h1 small{display:block;font-size:10px;letter-spacing:.5em;font-weight:400;color:#666}
+button,select{font:inherit;letter-spacing:.06em;padding:6px 14px;border:1px solid var(--fg);background:var(--surface);color:var(--fg);border-radius:2px;cursor:pointer}
+button:hover{background:var(--hd)}button.pri:hover,nav button.on:hover{background:#000}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 button.pri{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 button:disabled{opacity:.5;cursor:default}
-nav{display:flex;gap:4px;padding:8px 12px 0}
+nav{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px 0}
 nav button.on{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 main{padding:10px 12px}
 .pane{display:none}.pane.on{display:block}
-textarea{width:100%;height:260px;font:12px monospace;border:1px solid var(--line);border-radius:5px;padding:6px}
+textarea{width:100%;height:260px;font:12px monospace;border:1px solid var(--line);border-radius:2px;padding:6px}
 .layout{display:flex;gap:10px;align-items:flex-start}
 .gridwrap{overflow:auto;flex:1;max-height:calc(100vh - 150px);background:var(--surface);border:1px solid var(--line)}
 table.g{border-collapse:collapse;font-size:12px}
@@ -61,7 +64,7 @@ table.t input[type=number]{width:52px}
 </head>
 <body>
 <header>
-  <h1>勤務表 半自動作成</h1>
+  <h1><small>新生福祉会　楽生苑</small>勤務表 半自動作成</h1>
   <button id="bGen" class="pri">シフト作成（希望休を反映して自動作成）</button>
   <button id="bFill">空欄だけ埋める</button>
   <button id="bCopy">Excel用にコピー</button>
@@ -843,14 +846,15 @@ $('#bImport').onclick = () => {
   } catch (e) { $('#importMsg').textContent = '取込できません：' + e.message; }
 };
 $('#bSample').onclick = () => {
-  const labels = ['AB', 'CD'], names = ['青木', '井上', '上田', '江口', '小川', '加藤', '木村', '工藤', '近藤', '佐々木', '清水', '鈴木'];
+  const names = ['青木', '井上', '上田', '江口', '小川', '加藤', '木村', '工藤', '近藤', '佐々木', '清水', '鈴木',
+                 '高橋', '田中', '土屋', '中島', '西村', '野口', '橋本', '林', '平野', '藤田', '松本', '山口'];
   const D = 31, staff = [];
   names.forEach((n, i) => {
-    const cells = Array(D).fill('');
-    if (i % 4 === 1) cells[6] = cells[7] = cells[8] = '有休';
-    if (i % 5 === 2) cells[19] = 'リ休';
-    staff.push({ id: i, sec: 0, label: labels[i % 2], koyo: i % 3 ? '常' : '特', name: n + '（例）', cells, auto: true, unit: '2階/' + labels[i % 2],
-      from: 0, canNight: i !== 5, canJun: i % 2 === 0, canE: i % 3 !== 1, target: 10,
+    const cells = Array(D).fill(''), lab = i < 12 ? 'AB' : 'CD', k = i % 12;
+    if (k % 4 === 1) cells[6] = cells[7] = cells[8] = '有休';
+    if (k % 5 === 2) cells[19] = 'リ休';
+    staff.push({ id: i, sec: 0, label: lab, koyo: k % 3 ? '常' : '特', name: n + '（例）', cells, auto: true, unit: '2階/' + lab,
+      from: 0, canNight: k !== 5, canJun: k % 2 === 0, canE: k % 3 !== 1, target: 10,
       pref: { '早': 4, '日': 3, '遅': 3 }, pins: cells.map(c => c !== '') });
   });
   const nd = (a, b) => ({ wk: a, we: b });
