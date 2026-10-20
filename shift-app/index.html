@@ -261,7 +261,7 @@ function applyUnitPreset(S){
 }
 function resetNeeds(S){
   S.needs = inferNeeds(S);
-  S.minNeeds = JSON.parse(JSON.stringify(S.needs));
+  S.minNeeds = inferNeeds(S, true);
   applyUnitPreset(S);
 }
 function dayInfo(S){
@@ -296,14 +296,15 @@ function mode(arr){
   for (const k in f) if (f[k] > bf || (f[k] === bf && +k > best)){ best = +k; bf = f[k]; }
   return best;
 }
-// 現在の表から1日の必要人数を推定（最頻値）
-function inferNeeds(S){
+// 現在の表から1日の人数を推定：目標＝最頻値、最低＝実績の最小値（夜勤は最頻値）
+function inferNeeds(S, useMin){
   const { cl } = dayInfo(S), out = {};
   for (const U of unitsOf(S)){
     for (const sh of SHIFTS) for (const sc of scopesOf(U, sh)){
       const o = { wk: [], we: [] };
       for (let d = 0; d < S.D; d++) o[cl[d]].push(sc.members.filter(t => t.cells[d] === sh).length);
-      (out[sc.key] = out[sc.key] || {})[sh] = { wk: o.wk.length ? mode(o.wk) : 0, we: o.we.length ? mode(o.we) : 0 };
+      const pick = a => !a.length ? 0 : useMin && sh !== '夜' ? Math.min(...a) : mode(a);
+      (out[sc.key] = out[sc.key] || {})[sh] = { wk: pick(o.wk), we: pick(o.we) };
     }
   }
   return out;
