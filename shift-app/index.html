@@ -62,7 +62,7 @@ table.t input[type=number]{width:52px}
 <body>
 <header>
   <h1>勤務表 半自動作成</h1>
-  <button id="bGen" class="pri">自動作成（固定以外を作り直す）</button>
+  <button id="bGen" class="pri">シフト作成（希望休を反映して自動作成）</button>
   <button id="bFill">空欄だけ埋める</button>
   <button id="bCopy">Excel用にコピー</button>
   <button id="bPrint">印刷</button>
@@ -70,9 +70,11 @@ table.t input[type=number]{width:52px}
   <span id="status" class="note"></span>
 </header>
 <nav>
-  <button data-p="import">① 取込</button>
-  <button data-p="sheet">② 勤務表・チェック</button>
-  <button data-p="rules">③ 必要人数・職員設定</button>
+  <button data-p="import">① 取込・新しい月</button>
+  <button data-p="req">② 希望休入力</button>
+  <button data-p="rules">③ 必要人数・夜勤職員設定</button>
+  <button data-p="part">④ 非常勤・個別条件</button>
+  <button data-p="sheet">⑤ 勤務表・チェック</button>
 </nav>
 <main>
 <section id="p-import" class="pane">
@@ -80,6 +82,7 @@ table.t input[type=number]{width:52px}
   <textarea id="paste" placeholder="ここに貼り付け"></textarea>
   <p><button id="bImport" class="pri">取り込む</button> <button id="bSample">架空データで試す</button> <button id="bClear">保存データを消す</button></p>
   <div id="importMsg" class="note"></div>
+  <div id="monthBox"></div>
 </section>
 <section id="p-sheet" class="pane">
   <div class="ctl" style="margin-bottom:6px">
@@ -88,7 +91,9 @@ table.t input[type=number]{width:52px}
   </div>
   <div class="layout"><div class="gridwrap" id="grid"></div><div class="side" id="issues"></div></div>
 </section>
+<section id="p-req" class="pane"></section>
 <section id="p-rules" class="pane"></section>
+<section id="p-part" class="pane"></section>
 </main>
 <div id="pal"></div>
 
@@ -179,13 +184,66 @@ function importText(text){
     let from = 0; while (from < t.cells.length && t.cells[from] === '') from++;
     t.from = from >= t.cells.length ? 0 : from;
     t.canNight = cnt('夜') > 0; t.canJun = cnt('準夜勤') > 0; t.canE = cnt('遅E') > 0;
-    t.target = cnt('公'); t.nightTarget = cnt('夜');
+    t.target = cnt('公');
     t.pref = { '早': cnt('早') + 1, '日': cnt('日') + 1, '遅': cnt('遅') + cnt('遅E') + 1 };
     t.pins = t.cells.map(() => false);
     if (t.cells.some(c => cls(c) === 'leave')) t.cells.forEach((c, d) => { if (cls(c) === 'leave') t.pins[d] = true; });
   }
+  for (const t of S.staff) initExtras(t, S);
   S.needs = inferNeeds(S);
   return S;
+}
+
+const REQ_TYPES = ['希望休','有休','リ休','誕休','研修'];
+const dowOf = (S, d) => new Date(S.y, S.m - 1, d + 1).getDay();
+const weekOf = (S, d) => Math.floor((d + dowOf(S, 0)) / 7);
+// 非常勤・日勤職員の「今までの働き方」を取込んだ表から読み取る
+function inferPart(t, S){
+  const c = t.cells, f = {};
+  c.forEach(v => { if (cls(v) === 'work') f[v] = (f[v] || 0) + 1; });
+  const keys = Object.keys(f); if (!keys.length) return null;
+  const sym = keys.sort((a, b) => f[b] - f[a])[0];
+  const tot = Array(7).fill(0), wk = Array(7).fill(0), byWeek = {};
+  c.forEach((v, d) => {
+    if (cls(v) === 'leave') return;
+    const w = dowOf(S, d); tot[w]++;
+    if (cls(v) === 'work'){ wk[w]++; byWeek[weekOf(S, d)] = (byWeek[weekOf(S, d)] || 0) + 1; }
+  });
+  const allowed = tot.map((n, w) => n > 0 && wk[w] / n >= 0.2);
+  if (!allowed.some(Boolean)) allowed.fill(true);
+  return { sym, allowed, workTarget: keys.reduce((a, k) => a + f[k], 0), restTarget: c.filter(v => v === '公').length,
+           restSym: c.includes('公') ? '公' : '', perWeek: Math.max(1, ...Object.values(byWeek)) };
+}
+function initExtras(t, S){
+  if (t.nightFixed === undefined) t.nightFixed = null;
+  if (!t.req){
+    t.req = t.cells.map(c => cls(c) === 'leave' ? c : '');
+    t.reqApplied = t.req.map(r => !!r);
+  }
+  if (t.histLeave === undefined) t.histLeave = t.cells.filter(c => cls(c) === 'leave').length;
+  if (!t.auto && t.part === undefined) t.part = inferPart(t, S);
+}
+// 希望休・休暇の入力内容を勤務表に反映（固定）
+function applyRequests(S){
+  for (const t of S.staff){
+    for (let d = 0; d < S.D; d++){
+      const r = t.req[d];
+      if (r){ t.cells[d] = r === '希望休' ? '公' : r; t.pins[d] = true; t.reqApplied[d] = true; }
+      else if (t.reqApplied[d]){ t.reqApplied[d] = false; t.pins[d] = false; t.cells[d] = ''; }
+    }
+  }
+}
+// 翌月を始める：前月末の夜勤明けを引き継ぎ、他はクリア
+function newMonth(S, y, m){
+  const D = new Date(y, m, 0).getDate();
+  for (const t of S.staff){
+    const carry = t.cells[t.cells.length - 1] === '夜';
+    t.cells = Array(D).fill(''); t.pins = Array(D).fill(false);
+    t.req = Array(D).fill(''); t.reqApplied = Array(D).fill(false); t.from = 0;
+    if (carry){ t.cells[0] = '／'; t.pins[0] = true; }
+  }
+  S.sections.forEach(x => { x.D = D; });
+  S.y = y; S.m = m; S.D = D; S.holidays = [];
 }
 
 function dayInfo(S){
@@ -263,13 +321,24 @@ function checkUnit(U, S, di, out){
       else if (n > need && sh !== '日') add('W', null, d, `${nm}が${n}人（必要${need}人）で多い`);
     }
   }
-  const nc = U.staff.filter(t => t.canNight && t.nightTarget > 0).map(t => t.cells.filter(x => x === '夜').length);
-  if (nc.length){ const df = Math.max(...nc) - Math.min(...nc); if (df > 2) score += 6 * (df - 2); }
+  const nc = U.staff.filter(t => t.canNight && t.nightFixed == null).map(t => t.cells.filter(x => x === '夜').length);
+  if (nc.length){ const df = Math.max(...nc) - Math.min(...nc); if (df > 1) score += 6 * (df - 1); }
   return score;
 }
 function validateAll(S){
   const di = dayInfo(S), out = []; let total = 0;
   for (const u of unitsOf(S)) total += checkUnit(u, S, di, out);
+  for (const t of S.staff){
+    if (t.auto || !t.part) continue;
+    const sec = S.sections.find(x => x.id === t.sec).title;
+    t.cells.forEach((v, d) => {
+      if (cls(v) === 'work' && !t.part.allowed[dowOf(S, d)]){ out.push({ sev: 'W', unit: sec, s: t.id, d, msg: '出勤可能曜日以外に勤務が入っています' }); total += 12; }
+    });
+    if (t.part.restSym === '公'){
+      const r = t.cells.filter(v => v === '公').length;
+      if (r !== t.part.restTarget){ out.push({ sev: 'W', unit: sec, s: t.id, d: -1, msg: `公休が${r}日（目標${t.part.restTarget}日）` }); total += 12; }
+    }
+  }
   return { issues: out, score: total };
 }
 
@@ -296,18 +365,35 @@ function genUnit(U, S, di, mode, seed){
   // 前月からの夜勤明け → 翌日は公休
   for (let i = 0; i < n; i++) if (c[i][0] === '／' && D > 1 && free(i, 1)) c[i][1] = '公';
 
+  // 夜勤・準夜勤の回数を、出られる日数に応じて均等に配分（個別指定があればそれを優先）
+  const nT = st.map(() => 0), jT = st.map(() => 0);
+  const share = (sh, T, can) => {
+    for (const sc of scs(sh)){
+      const mem = [...sc.idx].filter(i => st[i][can]);
+      let total = 0; for (let d = 0; d < D; d++) total += Math.max(0, needS(sc, sh, d) - haveS(sc, sh, d));
+      const w = mem.map(i => { let f = 0; for (let d = 0; d < D; d++) if (free(i, d)) f++; return f; });
+      const sw = w.reduce((a, b) => a + b, 0) || 1;
+      mem.forEach((i, k) => { T[i] = c[i].filter(x => x === sh).length + total * w[k] / sw; });
+    }
+  };
+  share('夜', nT, 'canNight'); share('準夜勤', jT, 'canJun');
+  st.forEach((t, i) => { if (t.nightFixed != null) nT[i] = t.nightFixed; });
   // 夜勤
   const nCount = i => c[i].filter(x => x === '夜').length;
   for (let d = 0; d < D; d++) for (const sc of scs('夜')){
     let k = needS(sc, '夜', d) - haveS(sc, '夜', d);
     while (k > 0){
-      const cand = [];
-      for (const i of sc.idx){
-        if (!st[i].canNight || !free(i, d)) continue;
-        if (d + 1 < D && !free(i, d + 1)) continue;
-        if (!nextOk(i, d + 2) || runBefore(i, d) > max - 2) continue;
-        if (nCount(i) >= (st[i].nightTarget || 3) + 1) continue;
-        cand.push([(nCount(i) + 1) / (st[i].nightTarget || 3) + rnd() * 0.4, i]);
+      let cand = [];
+      for (const useCap of [true, false]){
+        cand = [];
+        for (const i of sc.idx){
+          if (!st[i].canNight || !free(i, d)) continue;
+          if (d + 1 < D && !free(i, d + 1)) continue;
+          if (!nextOk(i, d + 2) || runBefore(i, d) > max - 2) continue;
+          if (useCap && nCount(i) >= Math.ceil(nT[i])) continue;
+          cand.push([(nCount(i) + 1) / Math.max(nT[i], 0.5) + rnd() * 0.4, i]);
+        }
+        if (cand.length) break;
       }
       if (!cand.length) break;
       cand.sort((a, b) => a[0] - b[0]);
@@ -319,14 +405,20 @@ function genUnit(U, S, di, mode, seed){
     }
   }
   // 準夜勤
+  const jCount = i => c[i].filter(x => x === '準夜勤').length;
   for (let d = 0; d < D; d++) for (const sc of scs('準夜勤')){
     let k = needS(sc, '準夜勤', d) - haveS(sc, '準夜勤', d);
     while (k > 0){
-      const cand = [];
-      for (const i of sc.idx){
-        if (!st[i].canJun || !free(i, d) || runBefore(i, d) > max - 1) continue;
-        if (d + 1 < D && !(free(i, d + 1) || c[i][d+1] === '公')) continue;
-        cand.push([c[i].filter(x => x === '準夜勤').length + rnd() * 0.5, i]);
+      let cand = [];
+      for (const useCap of [true, false]){
+        cand = [];
+        for (const i of sc.idx){
+          if (!st[i].canJun || !free(i, d) || runBefore(i, d) > max - 1) continue;
+          if (d + 1 < D && !(free(i, d + 1) || c[i][d+1] === '公')) continue;
+          if (useCap && jCount(i) >= Math.ceil(jT[i])) continue;
+          cand.push([(jCount(i) + 1) / Math.max(jT[i], 0.5) + rnd() * 0.4, i]);
+        }
+        if (cand.length) break;
       }
       if (!cand.length) break;
       cand.sort((a, b) => a[0] - b[0]);
@@ -410,7 +502,39 @@ function genUnit(U, S, di, mode, seed){
   st.forEach((t, i) => { t.cells = orig[i]; });
   return { cells: result, score: cur };
 }
+// 非常勤・日勤職員：今までの働き方（記号・曜日・日数）を原則に出勤日を均等に配置
+function genPart(t, S, mode, seed){
+  const rnd = mulberry32(seed), D = S.D, p = t.part, c = t.cells.slice();
+  const lock = c.map((v, d) => d < t.from || t.pins[d] || cls(v) === 'leave' || (mode === 'fill' && v !== ''));
+  for (let d = 0; d < D; d++) if (!lock[d]) c[d] = '';
+  const freeDays = [], allowedFree = [];
+  for (let d = 0; d < D; d++) if (!lock[d]){ freeDays.push(d); if (p.allowed[dowOf(S, d)]) allowedFree.push(d); }
+  const lockedWork = c.filter((v, d) => lock[d] && cls(v) === 'work').length;
+  const lockedRest = c.filter((v, d) => lock[d] && v === '公').length;
+  const leaveNow = c.filter(v => cls(v) === 'leave').length;
+  let W;
+  if (p.restSym === '公') W = Math.min(allowedFree.length, freeDays.length - Math.max(0, p.restTarget - lockedRest));
+  else W = Math.min(allowedFree.length, Math.max(0, p.workTarget - lockedWork - Math.max(0, leaveNow - (t.histLeave || 0))));
+  W = Math.max(0, W);
+  const load = {}, chosen = [];
+  c.forEach((v, d) => { if (lock[d] && cls(v) === 'work') load[weekOf(S, d)] = (load[weekOf(S, d)] || 0) + 1; });
+  for (let k = 0; k < W; k++){
+    let best = -1, bs = 1e9;
+    for (const d of allowedFree){
+      if (chosen.includes(d)) continue;
+      const w = weekOf(S, d), l = load[w] || 0;
+      let md = 7; chosen.forEach(x => { md = Math.min(md, Math.abs(x - d)); });
+      const sc = l * 10 + (l >= p.perWeek ? 50 : 0) - md * 0.5 + rnd();
+      if (sc < bs){ bs = sc; best = d; }
+    }
+    if (best < 0) break;
+    chosen.push(best); load[weekOf(S, best)] = (load[weekOf(S, best)] || 0) + 1;
+  }
+  for (const d of freeDays) c[d] = chosen.includes(d) ? p.sym : p.restSym;
+  return c;
+}
 function generateAll(S, mode){
+  applyRequests(S);
   const di = dayInfo(S);
   for (const U of unitsOf(S)){
     let best = null;
@@ -420,6 +544,7 @@ function generateAll(S, mode){
     }
     U.staff.forEach((t, i) => { t.cells = best.cells[i]; });
   }
+  for (const t of S.staff) if (!t.auto && t.part) t.cells = genPart(t, S, mode, 500 + t.id);
 }
 
 // Excelへ貼り戻す形式
@@ -449,11 +574,14 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
-function load(){ try { const j = localStorage.getItem(KEY); if (j) S = JSON.parse(j); } catch (e) {} }
+function load(){ try { const j = localStorage.getItem(KEY); if (j){ S = JSON.parse(j); S.staff.forEach(t => initExtras(t, S)); } } catch (e) { S = null; } }
 
 function show(p){
   document.querySelectorAll('.pane').forEach(e => e.classList.toggle('on', e.id === 'p-' + p));
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+  if (p === 'import') renderMonthBox();
+  if (p === 'req') renderReq();
+  if (p === 'part') renderPart();
   if (p === 'rules') renderRules();
   if (p === 'sheet') renderSheet();
 }
@@ -492,7 +620,7 @@ function renderSheet(){
     for (const t of S.staff.filter(x => x.sec === sec.id)){
       if (t.label && t.label !== lab) h += `<tr><td class="nm" colspan="${S.D + 4}" style="color:#666">${esc(t.label)}</td></tr>`;
       lab = t.label;
-      h += `<tr><td class="nm">${esc(t.koyo)}　${esc(t.name)}${t.auto ? '' : ' <span class="note">手入力</span>'}</td>`;
+      h += `<tr><td class="nm">${esc(t.koyo)}　${esc(t.name)}${t.auto || t.part ? '' : ' <span class="note">手入力</span>'}</td>`;
       for (let d = 0; d < S.D; d++){
         const val = t.cells[d], k = t.id + ':' + d;
         h += `<td class="c ${cellClass(val)} ${t.pins[d] ? 'pin' : ''} ${bad.get(k) || ''} ${d < t.from ? 'lock' : ''}" data-s="${t.id}" data-d="${d}" id="c${t.id}_${d}">${esc(val)}</td>`;
@@ -531,10 +659,61 @@ function renderRules(){
       }
       h += '</tr>';
     }
-    h += '</table><table class="t" style="margin:6px 0 14px"><tr><th>職員</th><th>夜勤可</th><th>準夜可</th><th>遅E可</th><th>公休数</th><th>夜回数目安</th></tr>';
+    h += '</table><table class="t" style="margin:6px 0 14px"><tr><th>職員</th><th>夜勤可</th><th>準夜可</th><th>遅E可</th><th>公休数</th><th>夜回数（空欄＝均等）</th></tr>';
     for (const t of u.staff)
-      h += `<tr><td>${esc(t.label)} ${esc(t.name)}</td><td><input type="checkbox" data-st="${t.id}" data-f="canNight" ${t.canNight ? 'checked' : ''}></td><td><input type="checkbox" data-st="${t.id}" data-f="canJun" ${t.canJun ? 'checked' : ''}></td><td><input type="checkbox" data-st="${t.id}" data-f="canE" ${t.canE ? 'checked' : ''}></td><td><input type="number" data-st="${t.id}" data-f="target" value="${t.target}"></td><td><input type="number" data-st="${t.id}" data-f="nightTarget" value="${t.nightTarget}"></td></tr>`;
+      h += `<tr><td>${esc(t.label)} ${esc(t.name)}</td><td><input type="checkbox" data-st="${t.id}" data-f="canNight" ${t.canNight ? 'checked' : ''}></td><td><input type="checkbox" data-st="${t.id}" data-f="canJun" ${t.canJun ? 'checked' : ''}></td><td><input type="checkbox" data-st="${t.id}" data-f="canE" ${t.canE ? 'checked' : ''}></td><td><input type="number" data-st="${t.id}" data-f="target" value="${t.target}"></td><td><input type="number" data-st="${t.id}" data-f="nightFixed" value="${t.nightFixed == null ? '' : t.nightFixed}"></td></tr>`;
     h += '</table>';
+  }
+  p.innerHTML = h;
+}
+
+function renderMonthBox(){
+  const el = $('#monthBox'); if (!el) return;
+  if (!S){ el.innerHTML = ''; return; }
+  const nm = S.m === 12 ? [S.y + 1, 1] : [S.y, S.m + 1];
+  el.innerHTML = `<hr><h4>新しい月を始める</h4><p class="note">現在：${S.y}年${S.m}月。職員・必要人数・個別条件は引き継ぎ、勤務と希望休をクリアします（前月末が夜勤なら、翌月1日に「／」を引き継ぎます）。<b>前月分は先に「Excel用にコピー」で保存してください。</b></p>
+  <input type="number" id="nmY" value="${nm[0]}" style="width:70px"> 年 <input type="number" id="nmM" value="${nm[1]}" min="1" max="12" style="width:50px"> 月 <button id="bNewMonth" class="pri">この月を始める</button>`;
+}
+function renderReq(){
+  const p = $('#p-req');
+  if (!S){ p.innerHTML = '<p class="note">先に「① 取込」を行ってください。</p>'; return; }
+  const di = dayInfo(S), DOW = '日月火水木金土', ABBR = { '希望休': '休', '有休': '有', 'リ休': 'リ', '誕休': '誕', '研修': '研' };
+  let h = `<p class="note">${S.y}年${S.m}月の希望休を入力します（1〜10日に集計した分）。<b>マスをクリックするたびに 希望休→有休→リ休→誕休→研修→消去</b> と切り替わります。入力したものは「シフト作成」で固定され、公休数に数えられます（有休等は公休とは別）。</p>
+  <div class="gridwrap" style="max-height:calc(100vh - 230px)"><table class="g"><thead><tr><th class="nm">氏名</th>`;
+  for (let d = 0; d < S.D; d++) h += `<th class="we-${di.wd[d]} ${S.holidays.includes(d + 1) ? 'hol' : ''}">${d + 1}<br>${DOW[di.wd[d]]}</th>`;
+  h += '<th>希望休</th><th>休暇</th></tr></thead><tbody>';
+  for (const sec of S.sections){
+    h += `<tr><td class="nm" colspan="${S.D + 3}" style="background:#dfe6f5;font-weight:bold">${esc(sec.title)}</td></tr>`;
+    for (const t of S.staff.filter(x => x.sec === sec.id)){
+      h += `<tr><td class="nm">${esc(t.koyo)}　${esc(t.name)}</td>`;
+      for (let d = 0; d < S.D; d++){
+        const r = t.req[d];
+        h += `<td class="c ${r === '希望休' ? 'off' : r ? 'lv' : ''}" data-rs="${t.id}" data-rd="${d}">${r ? ABBR[r] : ''}</td>`;
+      }
+      h += `<td class="sum" id="rc${t.id}">${t.req.filter(r => r === '希望休').length}</td><td class="sum" id="rl${t.id}">${t.req.filter(r => r && r !== '希望休').length}</td></tr>`;
+    }
+  }
+  p.innerHTML = h + '</tbody></table></div>';
+}
+function renderPart(){
+  const p = $('#p-part');
+  if (!S){ p.innerHTML = '<p class="note">先に「① 取込」を行ってください。</p>'; return; }
+  const DOW = '日月火水木金土';
+  let h = `<p class="note">夜勤のない職員（非常勤・パート・日勤職員）は、取込んだ表の「今までの働き方」から、勤務記号・出勤できる曜日・日数を読み取っています。<b>個別の事情に合わせて修正</b>してください。「シフト作成」では、この条件で出勤日を週ごとに均等に配置します（配置人数の最低数のチェックは行いません）。</p>`;
+  for (const sec of S.sections){
+    const list = S.staff.filter(t => t.sec === sec.id && !t.auto && t.part);
+    if (!list.length) continue;
+    h += `<h4>${esc(sec.title)}</h4><div style="overflow:auto"><table class="t"><tr><th>職員</th><th>勤務記号<br>（例 9-15／日）</th>${[...DOW].map(w => `<th>${w}</th>`).join('')}<th>休みの表記</th><th>公休数</th><th>月の出勤日数<br>（公休なし表記の人）</th><th>週の上限日数</th></tr>`;
+    for (const t of list){
+      const q = t.part;
+      h += `<tr><td>${esc(t.koyo)} ${esc(t.name)}</td><td><input data-pt="${t.id}" data-f="sym" value="${esc(q.sym)}" size="8"></td>`;
+      q.allowed.forEach((a, w) => { h += `<td><input type="checkbox" data-pt="${t.id}" data-f="allowed" data-w="${w}" ${a ? 'checked' : ''}></td>`; });
+      h += `<td><select data-pt="${t.id}" data-f="restSym"><option value="公" ${q.restSym === '公' ? 'selected' : ''}>公</option><option value="" ${q.restSym === '' ? 'selected' : ''}>空欄</option></select></td>
+        <td><input type="number" min="0" max="31" data-pt="${t.id}" data-f="restTarget" value="${q.restTarget}"></td>
+        <td><input type="number" min="0" max="31" data-pt="${t.id}" data-f="workTarget" value="${q.workTarget}"></td>
+        <td><input type="number" min="1" max="7" data-pt="${t.id}" data-f="perWeek" value="${q.perWeek}"></td></tr>`;
+    }
+    h += '</table></div>';
   }
   p.innerHTML = h;
 }
@@ -545,7 +724,7 @@ $('#bImport').onclick = () => {
   try {
     const next = importText($('#paste').value);
     if (S && !confirm('現在の保存データを置き換えます。よろしいですか？')) return;
-    S = next; save(); curSec = 'all';
+    S = next; save(); curSec = 'all'; if (typeof renderMonthBox === 'function') renderMonthBox();
     const au = unitsOf(S).map(u => `${u.key}(${u.staff.length}名)`).join('、');
     $('#importMsg').textContent = `取込完了：${S.y}年${S.m}月・${S.sections.length}部署・${S.staff.length}名。自動作成の対象：${au || 'なし'}`;
     setStatus('');
@@ -559,12 +738,14 @@ $('#bSample').onclick = () => {
     if (i % 4 === 1) cells[6] = cells[7] = cells[8] = '有休';
     if (i % 5 === 2) cells[19] = 'リ休';
     staff.push({ id: i, sec: 0, label: labels[i % 2], koyo: i % 3 ? '常' : '特', name: n + '（例）', cells, auto: true, unit: '2階/' + labels[i % 2],
-      from: 0, canNight: i !== 5, canJun: i % 2 === 0, canE: i % 3 !== 1, target: 10, nightTarget: 3,
+      from: 0, canNight: i !== 5, canJun: i % 2 === 0, canE: i % 3 !== 1, target: 10,
       pref: { '早': 4, '日': 3, '遅': 3 }, pins: cells.map(c => c !== '') });
   });
   const nd = (a, b) => ({ wk: a, we: b });
   S = { y: 2026, m: 10, D, holidays: [12], maxConsec: 5, sections: [{ id: 0, title: '2階', D, auto: true }], staff,
     needs: { '2階/AB': { '早': nd(2, 1), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(1, 1) }, '2階/CD': { '早': nd(2, 1), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(1, 1) }, '2階/*': { '遅E': nd(1, 1), '準夜勤': nd(1, 1) } } };
+  S.staff.forEach(t => initExtras(t, S));
+  S.staff.forEach(t => { t.req = t.cells.map(c => c); t.reqApplied = t.req.map(r => !!r); });
   generateAll(S, 'rebuild'); save(); curSec = 'all'; show('sheet');
   setStatus('架空データ（例）です。マスをクリックして直したり、③で人数を変えて再作成できます');
 };
@@ -573,7 +754,7 @@ $('#secSel').onchange = e => { curSec = e.target.value; renderSheet(); };
 function runGen(mode){
   if (!S) return alert('先に取込を行ってください');
   if (!unitsOf(S).length) return alert('自動作成の対象職員がいません');
-  if (!confirm(mode === 'fill' ? '空欄だけを埋めます。' : '固定（紫枠・休暇系）以外のマスを作り直します。現在の内容は失われます。よろしいですか？')) return;
+  if (!confirm(mode === 'fill' ? '希望休を反映し、空欄だけを埋めます。' : '希望休を反映し、固定（紫枠）以外のマスを作り直します。現在の内容は失われます。よろしいですか？')) return;
   setStatus('作成中…');
   setTimeout(() => {
     generateAll(S, mode); save(); show('sheet');
@@ -641,15 +822,40 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.dataset.pt){
+    const q = S.staff[+t.dataset.pt].part, f = t.dataset.f;
+    if (f === 'allowed') q.allowed[+t.dataset.w] = t.checked;
+    else if (f === 'sym' || f === 'restSym') q[f] = t.value;
+    else q[f] = +t.value || 0;
+    save(); return;
+  }
   if (t.id === 'maxC'){ S.maxConsec = Math.max(3, +t.value || 5); save(); return; }
   if (t.id === 'hol'){ S.holidays = t.value.split(/[,、\s]+/).map(Number).filter(n => n >= 1 && n <= 31); save(); return; }
   if (t.dataset.nu){ S.needs[t.dataset.nu][t.dataset.sh][t.dataset.c] = Math.max(0, +t.value || 0); save(); return; }
   if (t.dataset.st){
     const s = S.staff[+t.dataset.st], f = t.dataset.f;
-    s[f] = t.type === 'checkbox' ? t.checked : (+t.value || 0); save();
+    s[f] = t.type === 'checkbox' ? t.checked : (t.value === '' && f === 'nightFixed' ? null : (+t.value || 0)); save();
   }
 });
 document.addEventListener('click', e => {
+  const rc = e.target.closest('td[data-rs]');
+  if (rc && S){
+    const t = S.staff[+rc.dataset.rs], d = +rc.dataset.rd, i = REQ_TYPES.indexOf(t.req[d]);
+    t.req[d] = i + 1 < REQ_TYPES.length ? REQ_TYPES[i + 1] : '';
+    const r = t.req[d]; save();
+    rc.className = 'c ' + (r === '希望休' ? 'off' : r ? 'lv' : '');
+    rc.textContent = r ? { '希望休': '休', '有休': '有', 'リ休': 'リ', '誕休': '誕', '研修': '研' }[r] : '';
+    $('#rc' + t.id).textContent = t.req.filter(x => x === '希望休').length;
+    $('#rl' + t.id).textContent = t.req.filter(x => x && x !== '希望休').length;
+    return;
+  }
+  if (e.target.id === 'bNewMonth' && S){
+    const y = +$('#nmY').value, m = +$('#nmM').value;
+    if (!(m >= 1 && m <= 12) || y < 2000) return alert('年月を確認してください');
+    if (!confirm(`${y}年${m}月を始めます。現在の勤務と希望休はクリアされます。よろしいですか？`)) return;
+    newMonth(S, y, m); save(); curSec = 'all'; show('req'); setStatus(`${y}年${m}月を開始しました。希望休を入力してください`);
+    return;
+  }
   if (e.target.id === 'bRe' && S){ S.needs = inferNeeds(S); save(); renderRules(); }
 });
 load(); show(S ? 'sheet' : 'import');
