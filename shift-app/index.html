@@ -152,6 +152,12 @@ table.t input[type=number]{width:56px}
 #cvBox canvas{display:block}
 #cvTip{display:none;position:absolute;z-index:40;pointer-events:none;background:#2b2e33;color:#fff;padding:4px 9px;border-radius:8px;font-size:12px;white-space:nowrap;box-shadow:0 3px 10px #0004}
 @media print{#cvBox{display:none!important}}
+/* export */
+.exCheck p{margin:6px 0}.exOk{color:#1b6e3a}.exNg,.exRed{color:#c62828;font-weight:700}.exWarn{background:#fff4e0;border-left:5px solid #f0a400;border-radius:10px;padding:7px 12px}
+.exCols{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}.exCol{border:2px solid #d3dbe6;border-radius:999px;padding:2px 8px;background:#fafbfd;white-space:nowrap}.exCol.on{border-color:var(--sky);background:var(--sky-t)}
+.exCol button{padding:0 6px;margin-left:3px;box-shadow:none;border-width:1px;font-size:11px}
+.exTa{width:100%;box-sizing:border-box;font:12px/1.5 ui-monospace,Consolas,monospace;border:2px solid #b9cde0;border-radius:10px;padding:8px;margin-top:6px}
+.exMsg{min-height:1.4em;color:#0a4f99;font-weight:600}.exSum{font-size:13px}.exRow td{background:#fdecea}
 </style>
 </head>
 <body>
@@ -178,6 +184,7 @@ table.t input[type=number]{width:56px}
   <button data-p="sheet"><span class="bd"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 10h17M9.5 4.5v15M15 10v9.5"/></svg></span><span class="tx"><b><span class="no">5</span>勤務表</b><i>作成とチェック</i></span></button>
   <button data-p="fte"><span class="bd"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V4M19 20v-6"/></svg></span><span class="tx"><b><span class="no">6</span>常勤換算</b><i>人員配置の確認</i></span></button>
   <button data-p="master"><span class="bd"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></span><span class="tx"><b><span class="no">7</span>マスタ</b><i>色・時間・職員台帳</i></span></button>
+  <button data-p="export"><span class="bd"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0l-4 4m4-4l4 4M5 14v5h14v-5"/></svg></span><span class="tx"><b><span class="no">8</span>出力</b><i>勤怠システム向け</i></span></button>
 </nav>
 <main>
 <section id="p-import" class="pane">
@@ -214,6 +221,7 @@ table.t input[type=number]{width:56px}
 <section id="p-part" class="pane"></section>
 <section id="p-fte" class="pane"></section>
 <section id="p-master" class="pane"></section>
+<section id="p-export" class="pane"></section>
 </main>
 <div id="pal"></div>
 
@@ -226,6 +234,7 @@ function emptyState(kind){
     rules: ['人数を決める準備がまだです', '「① 取込」で勤務表を読み込むと、部署ごとの必要人数や夜勤職員を設定できます。'],
     part: ['非常勤の条件を見る準備がまだです', '「① 取込」で勤務表を読み込むと、非常勤・パートの働き方を自動で読み取ります。'],
     fte: ['常勤換算を計算する準備がまだです', '「① 取込」で勤務表を読み込むと、ここに人員配置の目安が表示されます。'],
+    export: ['出力する準備がまだです', '「① 取込」で勤務表を読み込むと、勤怠システム向けの一覧CSVやパターンコード対応表をここで出せます。'],
     master: ['マスタを見る準備がまだです', '「① 取込」で勤務表を読み込むと、シフトの色・時間や職員台帳を管理できます。']
   };
   const t = T[kind] || T.sheet;
@@ -401,6 +410,7 @@ function inferPart(t, S){
 }
 function initExtras(t, S){
   if (t.hireDate === undefined){ t.hireDate = ''; t.retireDate = ''; t.leaveStart = ''; t.leaveEnd = ''; t.memo = ''; }
+  if (t.empId === undefined) t.empId = '';
   if (t.holidayOk === undefined) t.holidayOk = true;
   if (t.canEarly === undefined){ t.canEarly = true; t.canDay = true; t.canLate = true; }
   if (t.nightFixed === undefined) t.nightFixed = null;
@@ -498,40 +508,56 @@ function inferNeeds(S, useMin){
 }
 
 // ルールチェック（自動作成の点数づけと画面表示で共用）
-function checkUnit(U, S, di, out){
-  let score = 0; const D = S.D, max = S.maxConsec;
-  const add = (sev, t, d, msg, w) => { score += sev === 'E' ? 100 : (w || 12); if (out) out.push({ sev, unit: U.key, s: t ? t.id : -1, d, msg }); };
-  for (const t of U.staff){
-    const c = t.cells; let run = 0, rest = 0;
-    for (let d = 0; d < D; d++){
-      const v = c[d];
-      if (v === '夜' && d + 1 < D){
-        if (c[d+1] !== '／') add('E', t, d + 1, '夜勤の翌日は明け（／）にしてください');
-        else if (d + 2 < D && isWorkish(c[d+2])) add('W', t, d + 2, '夜勤明けの翌日は公休が望ましい');
-      }
-      if (v === '／' && d > 0 && c[d-1] !== '夜') add('E', t, d, '／（明け）の前日が夜勤ではありません');
-      if (d > 0 && c[d-1] === '遅' && v === '早') add('W', t, d, '遅番の翌日に早番（勤務間隔が短い）');
-      if (d > 0 && c[d-1] === '準夜勤' && (v === '早' || v === '日')) add('W', t, d, '準夜勤の翌日に日勤・早番');
-      if (isWorkish(v)){ run++; if (run === max + 1) add('E', t, d, `連続勤務が${max}日を超えています`); }
-      else run = 0;
-      if (v === '公') rest++;
-    }
-    if (t.target > 0 && rest !== t.target) add('E', t, -1, `公休が${rest}日（目標${t.target}日）`);
-  }
+// 職員1人ぶん（連続勤務・夜勤明け・公休数など）。add(sev, 職員, 日, 文言, 重み)
+function personCheck(t, S, add){
+  const D = S.D, max = S.maxConsec, c = t.cells; let run = 0, rest = 0;
   for (let d = 0; d < D; d++){
-    for (const sh of SHIFTS) for (const sc of scopesOf(U, sh)){
-      const need = ((S.needs[sc.key] || {})[sh] || {})[di.cl[d]] || 0;
-      const mn = Math.min(need, (((S.minNeeds || {})[sc.key] || {})[sh] || {})[di.cl[d]] ?? need);
-      const n = sc.members.reduce((a, t) => a + (t.cells[d] === sh ? 1 : 0), 0);
-      const nm = (sc.label ? sc.label + ' ' : '') + sh;
-      if (n < mn) add('E', null, d, `${nm}が${n}人（最低${mn}人）`);
-      else if (n < need) add('W', null, d, `${nm}が${n}人（目標${need}人）`, 5 * (need - n));
-      else if (n > need && sh !== '日') add('W', null, d, `${nm}が${n}人（必要${need}人）で多い`);
+    const v = c[d];
+    if (v === '夜' && d + 1 < D){
+      if (c[d+1] !== '／') add('E', t, d + 1, '夜勤の翌日は明け（／）にしてください');
+      else if (d + 2 < D && isWorkish(c[d+2])) add('W', t, d + 2, '夜勤明けの翌日は公休が望ましい');
     }
+    if (v === '／' && d > 0 && c[d-1] !== '夜') add('E', t, d, '／（明け）の前日が夜勤ではありません');
+    if (d > 0 && c[d-1] === '遅' && v === '早') add('W', t, d, '遅番の翌日に早番（勤務間隔が短い）');
+    if (d > 0 && c[d-1] === '準夜勤' && (v === '早' || v === '日')) add('W', t, d, '準夜勤の翌日に日勤・早番');
+    if (isWorkish(v)){ run++; if (run === max + 1) add('E', t, d, `連続勤務が${max}日を超えています`); }
+    else run = 0;
+    if (v === '公') rest++;
   }
+  if (t.target > 0 && rest !== t.target) add('E', t, -1, `公休が${rest}日（目標${t.target}日）`);
+}
+// シフト×範囲ごとの人数（目標・最低・名称）。日ごとに引き直すと山登り法で極端に遅くなるので1回だけ作る
+function coverList(U, S){
+  const list = [];
+  for (const sh of SHIFTS) for (const sc of scopesOf(U, sh)){
+    const nd = (S.needs[sc.key] || {})[sh] || {}, mnd = (((S.minNeeds || {})[sc.key] || {})[sh]) || {}, tb = {};
+    for (const k of ['wk', 'we']){ const need = nd[k] || 0; tb[k] = [need, Math.min(need, mnd[k] ?? need)]; }
+    list.push({ sh, sc, tb, nm: (sc.label ? sc.label + ' ' : '') + sh });
+  }
+  return list;
+}
+// 1日ぶんの人数チェック
+function coverCheck(list, di, d, add){
+  for (const { sh, sc, tb, nm } of list){
+    const [need, mn] = tb[di.cl[d]];
+    let n = 0; for (const t of sc.members) if (t.cells[d] === sh) n++;
+    if (n < mn) add('E', null, d, `${nm}が${n}人（最低${mn}人）`);
+    else if (n < need) add('W', null, d, `${nm}が${n}人（目標${need}人）`, 5 * (need - n));
+    else if (n > need && sh !== '日') add('W', null, d, `${nm}が${n}人（必要${need}人）で多い`);
+  }
+}
+function nightSpread(U){
   const nc = U.staff.filter(t => t.canNight && t.nightFixed == null).map(t => t.cells.filter(x => x === '夜').length);
-  if (nc.length){ const df = Math.max(...nc) - Math.min(...nc); if (df > 1) score += 6 * (df - 1); }
-  return score;
+  if (nc.length){ const df = Math.max(...nc) - Math.min(...nc); if (df > 1) return 6 * (df - 1); }
+  return 0;
+}
+function checkUnit(U, S, di, out){
+  let score = 0; const D = S.D;
+  const add = (sev, t, d, msg, w) => { score += sev === 'E' ? 100 : (w || 12); if (out) out.push({ sev, unit: U.key, s: t ? t.id : -1, d, msg }); };
+  for (const t of U.staff) personCheck(t, S, add);
+  const list = coverList(U, S);
+  for (let d = 0; d < D; d++) coverCheck(list, di, d, add);
+  return score + nightSpread(U);
 }
 function validateAll(S){
   const di = dayInfo(S), out = []; let total = 0;
@@ -695,7 +721,12 @@ function genUnit(U, S, di, mode, seed){
   }
   // 山登り法：休と勤務の入れかえで点数を下げる
   const movable = (i, d) => !lock[i][d] && ['早', '日', '遅', '遅E', '公'].includes(c[i][d]);
-  let cur = checkUnit(U, S, di, null);
+  // 差分評価：入れかえで変わるのは「その職員の連続勤務等」と「その日の人数」だけなので、そこだけ再計算する
+  const wl = coverList(U, S);
+  const pS = i => { let s = 0; personCheck(st[i], S, (sev, t, d, msg, w) => { s += sev === 'E' ? 100 : (w || 12); }); return s; };
+  const dS = d => { let s = 0; coverCheck(wl, di, d, (sev, t, dd, msg, w) => { s += sev === 'E' ? 100 : (w || 12); }); return s; };
+  const P = st.map((t, i) => pS(i)), C = []; for (let d = 0; d < D; d++) C.push(dS(d));
+  let cur = P.reduce((a, b) => a + b, 0) + C.reduce((a, b) => a + b, 0) + nightSpread(U);
   for (let it = 0; it < 12000 && cur > 0; it++){
     const i = (rnd() * n) | 0, j = (rnd() * n) | 0;
     let a, b, x, y;
@@ -703,16 +734,16 @@ function genUnit(U, S, di, mode, seed){
       a = (rnd() * D) | 0; b = (rnd() * D) | 0;
       if (a === b || !movable(i, a) || !movable(i, b) || c[i][a] === c[i][b]) continue;
       [c[i][a], c[i][b]] = [c[i][b], c[i][a]];
-      const s2 = checkUnit(U, S, di, null);
-      if (s2 <= cur) cur = s2; else [c[i][a], c[i][b]] = [c[i][b], c[i][a]];
+      const np = pS(i), na = dS(a), nb = dS(b), s2 = cur - P[i] - C[a] - C[b] + np + na + nb;
+      if (s2 <= cur){ cur = s2; P[i] = np; C[a] = na; C[b] = nb; } else [c[i][a], c[i][b]] = [c[i][b], c[i][a]];
     } else {
       a = (rnd() * D) | 0;
       if (i === j || !movable(i, a) || !movable(j, a) || c[i][a] === c[j][a]) continue;
       if (c[i][a] === '公' || c[j][a] === '公') continue; // 公休数を崩さない
       if (!allowSym(st[j], c[i][a]) || !allowSym(st[i], c[j][a])) continue;
       [c[i][a], c[j][a]] = [c[j][a], c[i][a]];
-      const s2 = checkUnit(U, S, di, null);
-      if (s2 <= cur) cur = s2; else [c[i][a], c[j][a]] = [c[j][a], c[i][a]];
+      const pi = pS(i), pj = pS(j), na = dS(a), s2 = cur - P[i] - P[j] - C[a] + pi + pj + na;
+      if (s2 <= cur){ cur = s2; P[i] = pi; P[j] = pj; C[a] = na; } else [c[i][a], c[j][a]] = [c[j][a], c[i][a]];
     }
   }
   const result = c.map(r => r.slice());
@@ -968,6 +999,7 @@ function show(p){
   if (p === 'part') renderPart();
   if (p === 'fte') renderFte();
   if (p === 'master') renderMaster();
+  if (p === 'export') renderExport();
   if (p === 'rules') renderRules();
   if (p === 'sheet') renderSheet();
 }
@@ -1141,14 +1173,14 @@ function renderMaster(){
     h += `<tr><td><b>${esc(k)}</b></td><td>${esc(c.code || '')}</td><td>${esc(hh.s)}</td><td>${esc(hh.e)}</td><td>${hh.brkFlag ? '有' : ''}</td><td><input type="number" step="0.25" data-sm="${esc(k)}" data-f="brk" value="${hh.brk}" style="width:55px"></td><td>${sp ? (Math.round(sp.work * 100) / 100).toFixed(2) : '-'}</td></tr>`; }
   h += '</table></div></details>';
   h += `<h4>職員台帳</h4><p class="note">採用日・退職日・休職期間は、該当する日を自動で勤務対象外にします（空欄は制限なし）。「入れるシフト」は自動作成が参照します。休職・退職の期間に勤務が入っていると、エラーになります。</p>
-  <div style="overflow:auto;max-height:70vh"><table class="t"><tr><th>部署</th><th>職員</th><th>状況（今月）</th><th>採用日</th><th>退職日</th><th>休職開始</th><th>休職終了</th><th>祝日出勤可</th><th>早</th><th>日</th><th>遅</th><th>遅E</th><th>準夜</th><th>夜</th><th>備考</th></tr>`;
+  <div style="overflow:auto;max-height:70vh"><table class="t"><tr><th>部署</th><th>職員</th><th>状況（今月）</th><th>採用日</th><th>退職日</th><th>休職開始</th><th>休職終了</th><th>職員ID<br>(社員コード)</th><th>祝日出勤可</th><th>早</th><th>日</th><th>遅</th><th>遅E</th><th>準夜</th><th>夜</th><th>備考</th></tr>`;
   for (const t of S.staff){
     const sec = S.sections.find(x => x.id === t.sec).title;
     let na = 0; for (let d = 0; d < S.D; d++) if (unavail(S, t, d)) na++;
     const st = na === 0 ? '全日対象' : na === S.D ? '全日対象外' : `${na}日対象外`;
     const chk = f => `<td><input type="checkbox" data-ld="${t.id}" data-f="${f}" ${t[f] !== false ? 'checked' : ''}></td>`;
     const dt = f => `<td><input type="date" data-ld="${t.id}" data-f="${f}" value="${t[f] || ''}"></td>`;
-    h += `<tr><td>${esc(sec)}</td><td>${esc(t.name)}</td><td class="${na ? 'bad' : ''}">${st}</td>${dt('hireDate')}${dt('retireDate')}${dt('leaveStart')}${dt('leaveEnd')}${chk('holidayOk')}${chk('canEarly')}${chk('canDay')}${chk('canLate')}<td><input type="checkbox" data-ld="${t.id}" data-f="canE" ${t.canE ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canJun" ${t.canJun ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canNight" ${t.canNight ? 'checked' : ''}></td><td><input data-ld="${t.id}" data-f="memo" value="${esc(t.memo || '')}" size="14"></td></tr>`;
+    h += `<tr><td>${esc(sec)}</td><td>${esc(t.name)}</td><td class="${na ? 'bad' : ''}">${st}</td><td><input data-ld="${t.id}" data-f="empId" value="${esc(t.empId || '')}" size="8" placeholder="未入力"></td>${dt('hireDate')}${dt('retireDate')}${dt('leaveStart')}${dt('leaveEnd')}${chk('holidayOk')}${chk('canEarly')}${chk('canDay')}${chk('canLate')}<td><input type="checkbox" data-ld="${t.id}" data-f="canE" ${t.canE ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canJun" ${t.canJun ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canNight" ${t.canNight ? 'checked' : ''}></td><td><input data-ld="${t.id}" data-f="memo" value="${esc(t.memo || '')}" size="14"></td></tr>`;
   }
   p.innerHTML = h + '</table></div>';
 }
@@ -1415,6 +1447,131 @@ function celebrate(){
 cvArtInit();
 // ==== CANVAS-END ====
 
+// ==== EXPORT-START ====
+// 勤怠システム向け出力。取込先の正式な形式は未確認のため、汎用の一覧CSVとして出す（形式が分かったら EXP_COLS / buildAttendanceCsv を調整）
+const EXP_COLS = {
+  empId: { label: '職員ID', get: r => r.empId },
+  name: { label: '氏名', get: r => r.name },
+  dept: { label: '部署', get: r => r.dept },
+  date: { label: '日付', get: r => r.date },
+  sym: { label: '記号', get: r => r.sym },
+  code: { label: 'パターンコード', get: r => r.code },
+  pname: { label: 'パターン名', get: r => r.pname },
+  start: { label: '始業', get: r => r.start },
+  end: { label: '終業', get: r => r.end },
+  brk: { label: '休憩(h)', get: r => r.brk },
+  work: { label: '実働(h)', get: r => r.work },
+  memo: { label: '備考', get: r => r.memo }
+};
+const EXP_DEFAULT_COLS = ['empId', 'name', 'dept', 'date', 'sym', 'code', 'pname', 'start', 'end', 'brk', 'work', 'memo'];
+// 台帳にコード未設定でも、勤怠システムの基本パターン（日勤500）は補う
+function expCodeOf(sym){ return sym === '日' ? '500' : (E3_CODES[sym] || ''); }
+function expCsvCell(v){ const s = v == null ? '' : String(v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+function expHM(x){ const h = Math.floor(x + 1e-9) % 24, m = Math.round((x - Math.floor(x + 1e-9)) * 60); return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'); }
+function expRound(x){ return String(Math.round(x * 100) / 100); }
+// 職員×日の行を作る（空欄の日は出さない。opt.koukyu === false なら公休「公」も出さない）
+function buildAttendanceRows(S, opt){
+  opt = opt || {}; const rows = [];
+  for (const t of S.staff){
+    const dept = (S.sections.find(x => x.id === t.sec) || {}).title || '';
+    for (let d = 0; d < S.D; d++){
+      const sym = t.cells[d]; if (!sym) continue;
+      if (opt.koukyu === false && sym === '公') continue;
+      const c = (S.colors && S.colors[sym]) || {}, sp = shiftSpan(sym, S), hh = S.fte && S.fte.hours[sym];
+      rows.push({ empId: t.empId || '', name: t.name, dept, date: `${S.y}-${String(S.m).padStart(2, '0')}-${String(d + 1).padStart(2, '0')}`, sym,
+        code: c.code || expCodeOf(sym), pname: c.name || sym,
+        start: sp ? expHM(sp.s) : '', end: sp ? expHM(sp.e) : '', brk: sp ? expRound(sp.brk) : '', work: sp ? expRound(sp.work) : '',
+        memo: t.memo || '', _t: t });
+    }
+  }
+  return rows;
+}
+// 戻り値: { header, lines, csv（BOMなし・CRLF）, bom（BOM付き）, count, staffCount, bySym }
+function buildAttendanceCsv(S, opt){
+  opt = opt || {};
+  const cols = (opt.cols || EXP_DEFAULT_COLS).filter(k => EXP_COLS[k]);
+  const rows = buildAttendanceRows(S, opt), bySym = {}, st = new Set();
+  rows.forEach(r => { bySym[r.sym] = (bySym[r.sym] || 0) + 1; st.add(r._t); });
+  const header = cols.map(k => EXP_COLS[k].label);
+  const lines = [header.map(expCsvCell).join(',')].concat(rows.map(r => cols.map(k => expCsvCell(EXP_COLS[k].get(r))).join(',')));
+  const csv = lines.join('\r\n') + '\r\n';
+  return { header, lines, csv, bom: '﻿' + csv, count: rows.length, staffCount: st.size, bySym };
+}
+// パターンコード対応表（記号→コード→名称→時間）
+function buildCodeTable(S){
+  const used = {}; S.staff.forEach(t => t.cells.forEach(c => { if (c) used[c] = (used[c] || 0) + 1; }));
+  const syms = [...new Set(Object.keys(used).concat(S.shiftList))];
+  return syms.map(k => { const c = (S.colors && S.colors[k]) || {}, sp = shiftSpan(k, S), n = used[k] || 0;
+    return { sym: k, code: c.code || expCodeOf(k), name: c.name || k, start: sp ? expHM(sp.s) : '', end: sp ? expHM(sp.e) : '', brk: sp ? expRound(sp.brk) : '', work: sp ? expRound(sp.work) : '', used: n }; });
+}
+function buildCodeCsv(S){
+  const L = [['記号', 'パターンコード', 'パターン名', '始業', '終業', '休憩(h)', '実働(h)', '今月の使用数']];
+  buildCodeTable(S).forEach(r => L.push([r.sym, r.code, r.name, r.start, r.end, r.brk, r.work, r.used]));
+  return L.map(a => a.map(expCsvCell).join(',')).join('\r\n') + '\r\n';
+}
+// 出力前チェック（警告のみ。出力はブロックしない）
+function exportCheck(S, opt){
+  const rows = buildAttendanceRows(S, opt), v = validateAll(S);
+  const errs = v.issues.filter(x => x.sev === 'E').length, warns = v.issues.filter(x => x.sev === 'W').length;
+  const noCode = {}; rows.forEach(r => { if (!r.code) noCode[r.sym] = (noCode[r.sym] || 0) + 1; });
+  const noId = []; const seen = new Set(); rows.forEach(r => { if (!r.empId && !seen.has(r._t)){ seen.add(r._t); noId.push(r.name); } });
+  return { errs, warns, noCode, noId, rows: rows.length };
+}
+// ---- 画面 ----
+const EXP = { cols: EXP_DEFAULT_COLS.slice(), koukyu: true, text: '' };
+function renderExport(){
+  const p = $('#p-export');
+  if (!S){ p.innerHTML = emptyState('export'); return; }
+  const opt = { cols: EXP.cols, koukyu: EXP.koukyu }, r = buildAttendanceCsv(S, opt), ck = exportCheck(S, opt), tb = buildCodeTable(S);
+  const noC = Object.keys(ck.noCode), bad = ck.errs || noC.length || ck.noId.length;
+  let h = `<h4>出力前チェック</h4><div class="card exCheck">`;
+  h += `<p class="${ck.errs ? 'exNg' : 'exOk'}">${ck.errs ? '▲' : '●'} 勤務表のエラー：<b>${ck.errs}件</b>${ck.errs ? '（「⑤ 勤務表」で確認してください）' : ''}${ck.warns ? `　注意 ${ck.warns}件` : ''}</p>`;
+  h += `<p class="${noC.length ? 'exNg' : 'exOk'}">${noC.length ? '▲' : '●'} パターンコード未設定の記号：<b>${noC.length ? noC.map(k => `「${esc(k)}」${ck.noCode[k]}件`).join('、') : 'なし'}</b>${noC.length ? '　<button data-ex="gomaster">⑦ マスタ・台帳で設定する</button>' : ''}</p>`;
+  h += `<p class="${ck.noId.length ? 'exNg' : 'exOk'}">${ck.noId.length ? '▲' : '●'} 職員IDが未入力の職員：<b>${ck.noId.length}名</b>${ck.noId.length ? `（${esc(ck.noId.slice(0, 6).join('、'))}${ck.noId.length > 6 ? ' ほか' : ''}）　<button data-ex="gomaster">⑦ 職員台帳で入力する</button>` : ''}</p>`;
+  h += bad ? `<p class="exWarn">この状態で出力すると、取込先の勤怠システムでエラーになる可能性があります。出力自体は止めません。</p>` : `<p class="exOk">問題は見つかりませんでした。</p>`;
+  h += `</div><h4>出力内容の確認（${S.y}年${S.m}月）</h4><div class="card"><p>出力行数：<b>${r.count}行</b>（1行＝職員×日）　対象職員：<b>${r.staffCount}名</b></p>
+  <table class="t exSum"><tr><th>記号</th>${Object.keys(r.bySym).map(k => `<th>${esc(k)}</th>`).join('')}</tr><tr><th>件数</th>${Object.keys(r.bySym).map(k => `<td>${r.bySym[k]}</td>`).join('')}</tr></table></div>`;
+  h += `<h4>勤怠向け一覧CSV</h4><div class="card"><p class="note"><b>取込先（勤怠システム）の正式な形式は未確認です。</b>ここで出すのは汎用の一覧形式で、そのまま取り込める保証はありません。取込先の形式が確定したら、列・文字コードを合わせます。文字コードは <b>UTF-8（BOM付き）</b>でExcelで開けます。ブラウザ内でShift_JISへの変換はできません。</p>
+  <p><b>列（チェックで選択、◀▶で並べ替え）</b></p><div class="exCols">`;
+  const all = EXP.cols.concat(EXP_DEFAULT_COLS.filter(k => !EXP.cols.includes(k)));
+  all.forEach((k, i) => { const on = EXP.cols.includes(k); h += `<span class="exCol${on ? ' on' : ''}"><label><input type="checkbox" data-ex="col" data-k="${k}" ${on ? 'checked' : ''}> ${esc(EXP_COLS[k].label)}</label>${on ? `<button data-ex="mv" data-k="${k}" data-dir="-1" aria-label="${esc(EXP_COLS[k].label)}を前へ">◀</button><button data-ex="mv" data-k="${k}" data-dir="1" aria-label="${esc(EXP_COLS[k].label)}を後ろへ">▶</button>` : ''}</span>`; });
+  h += `</div><p><label><input type="checkbox" data-ex="kou" ${EXP.koukyu ? 'checked' : ''}> 公休（記号「公」）の行も出す</label>　<span class="note2">空欄の日は出力しません。</span></p>
+  <p class="btnrow"><button class="pri" id="exDl">CSVをダウンロード</button> <button id="exPrev">画面にプレビュー表示</button> <button id="exCopy">クリップボードにコピー</button></p>
+  <p id="exMsg" class="exMsg" role="status"></p>
+  <textarea id="exTa" class="exTa" readonly rows="10" style="display:none" aria-label="CSVプレビュー"></textarea></div>`;
+  h += `<h4>パターンコード対応表</h4><div class="card"><p class="note">勤怠システムの勤務種別パターンマスタと突き合わせるための一覧です。コード未設定の記号は<b class="exRed">赤字</b>で表示します。</p>
+  <p class="btnrow"><button id="exCdDl">対応表CSVをダウンロード</button> <button id="exCdCopy">対応表をコピー</button> <button data-ex="gomaster">⑦ マスタ・台帳へ</button></p>
+  <div style="overflow:auto;max-height:50vh"><table class="t"><tr><th>記号</th><th>コード</th><th>名称</th><th>始業</th><th>終業</th><th>休憩(h)</th><th>実働(h)</th><th>今月の使用</th></tr>`;
+  tb.forEach(x => { h += `<tr${!x.code && x.used ? ' class="exRow"' : ''}><td><b>${esc(x.sym)}</b></td><td class="${x.code ? '' : 'exRed'}">${x.code ? esc(x.code) : (x.used ? '未設定！' : '未設定')}</td><td>${esc(x.name)}</td><td>${x.start}</td><td>${x.end}</td><td>${x.brk}</td><td>${x.work}</td><td>${x.used || ''}</td></tr>`; });
+  p.innerHTML = h + '</table></div></div>';
+  EXP.text = r.bom;
+}
+function expDownload(name, text){
+  try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); return true; } catch (e) { return false; }
+}
+async function expCopy(text, ta){
+  try { await navigator.clipboard.writeText(text.replace(/^﻿/, '')); return true; } catch (e) {}
+  try { ta.style.display = 'block'; ta.value = text.replace(/^﻿/, ''); ta.focus(); ta.select(); if (document.execCommand && document.execCommand('copy')) return true; } catch (e) {}
+  try { ta.style.display = 'block'; ta.value = text.replace(/^﻿/, ''); ta.focus(); ta.select(); } catch (e) {}
+  return false;
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest ? e.target.closest('#p-export button, #p-export input') : null; if (!t || !S) return;
+  const msg = s => { const m = $('#exMsg'); if (m) m.textContent = s; };
+  const opt = { cols: EXP.cols, koukyu: EXP.koukyu }, fn = `kinmu_${S.y}-${String(S.m).padStart(2, '0')}`;
+  const ex = t.dataset.ex;
+  if (ex === 'gomaster'){ show('master'); return; }
+  if (ex === 'col'){ const k = t.dataset.k; if (t.checked){ if (!EXP.cols.includes(k)) EXP.cols.push(k); } else EXP.cols = EXP.cols.filter(x => x !== k); renderExport(); return; }
+  if (ex === 'mv'){ const i = EXP.cols.indexOf(t.dataset.k), j = i + +t.dataset.dir; if (i >= 0 && j >= 0 && j < EXP.cols.length){ [EXP.cols[i], EXP.cols[j]] = [EXP.cols[j], EXP.cols[i]]; renderExport(); } return; }
+  if (ex === 'kou'){ EXP.koukyu = t.checked; renderExport(); return; }
+  if (t.id === 'exDl'){ const r = buildAttendanceCsv(S, opt); msg(expDownload(fn + '.csv', r.bom) ? `${r.count}行をダウンロードしました（UTF-8 BOM付き）。保存されない環境では「画面にプレビュー表示」「コピー」を使ってください。` : 'ダウンロードできませんでした。プレビュー表示またはコピーを使ってください。'); return; }
+  if (t.id === 'exPrev'){ const ta = $('#exTa'), r = buildAttendanceCsv(S, opt); ta.style.display = 'block'; ta.value = r.csv; msg(`${r.count}行を表示しました（BOMは画面表示では省略）。`); return; }
+  if (t.id === 'exCopy'){ const r = buildAttendanceCsv(S, opt), ta = $('#exTa'); ta.value = r.csv; msg(await expCopy(r.csv, ta) ? `${r.count}行をコピーしました。Excelなどに貼り付けられます。` : 'コピーできませんでした。下の欄を選択済みです。Ctrl+C（Macは⌘C）でコピーしてください。'); return; }
+  if (t.id === 'exCdDl'){ msg(''); expDownload(fn + '_codes.csv', '﻿' + buildCodeCsv(S)); return; }
+  if (t.id === 'exCdCopy'){ const ta = $('#exTa'), c = buildCodeCsv(S); ta.value = c; msg(await expCopy(c, ta) ? 'パターンコード対応表をコピーしました。' : 'コピーできませんでした。上の欄を選択済みです。'); return; }
+});
+// ==== EXPORT-END ====
+
 // ---- イベント ----
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.p));
 $('#bImport').onclick = () => {
@@ -1531,7 +1688,7 @@ document.addEventListener('change', e => {
     else S.colors[k][f] = t.value;
     save(); renderMaster(); return;
   }
-  if (t.dataset.ld){ const x = S.staff[+t.dataset.ld], f = t.dataset.f; x[f] = t.type === 'checkbox' ? t.checked : t.value; save(); if (t.type !== 'checkbox' && f !== 'memo') renderMaster(); return; }
+  if (t.dataset.ld){ const x = S.staff[+t.dataset.ld], f = t.dataset.f; x[f] = t.type === 'checkbox' ? t.checked : t.value; save(); if (t.type !== 'checkbox' && f !== 'memo' && f !== 'empId') renderMaster(); return; }
   if (t.dataset.fte){ const q = S.staff[+t.dataset.fte].fte, f = t.dataset.f; q[f] = f === 'week' ? (+t.value || 0) : t.value; save(); renderFte(); return; }
   if (t.dataset.fh){ const hh = S.fte.hours[t.dataset.fh]; hh[t.dataset.f] = t.dataset.f === 'brk' ? (+t.value || 0) : t.value; S.fte.confirmed = false; save(); renderFte(); return; }
   if (t.dataset.fl){ S.fte.leave[t.dataset.fl] = t.value; save(); renderFte(); return; }
@@ -1627,10 +1784,54 @@ document.addEventListener('click', e => {
         const btn = q('#lgBtn'); btn.disabled = true; q('#lgMsg').textContent = '';
         try {
           const r = await call('POST', '/api/login', { id: q('#lgId').value.trim(), password: q('#lgPw').value });
-          if (r.ok){ SRV.user = r.json; q('#lgPw').value = ''; ov.remove(); resolve(); return; }
+          if (r.ok){ SRV.user = r.json; q('#lgPw').value = ''; ov.remove(); if (r.json && r.json.mustChange) await pwDialog(true); resolve(); return; }
           q('#lgMsg').textContent = (r.json && r.json.message) || 'ログインできません';
         } catch (err) { q('#lgMsg').textContent = 'サーバーに接続できません'; }
         btn.disabled = false; q('#lgPw').value = ''; q('#lgPw').focus();
+      };
+    });
+  }
+
+  // ---- パスワード変更ダイアログ（forced=true は初回ログイン時の必須変更。閉じられない）----
+  function pwDialog(forced){
+    return new Promise(resolve => {
+      const old = q('#pwOv'); if (old) old.remove();
+      const ov = document.createElement('div'); ov.id = 'pwOv'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:1001;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px';
+      const inp = (id, label, ac) => '<label style="display:block;font-size:13px;margin-bottom:10px">' + label + '<br><input id="' + id + '" type="password" autocomplete="' + ac + '" required style="width:100%;box-sizing:border-box;padding:8px;font-size:15px"></label>';
+      ov.innerHTML = '<form id="pwForm" style="background:var(--surface,#fff);border:1px solid var(--line,#cfe0ef);border-radius:var(--r,16px);box-shadow:var(--sh,0 4px 14px rgba(0,0,0,.15));padding:24px;width:min(380px,100%);color:var(--fg,#1f2a44)">'
+        + '<h2 style="margin:0 0 4px;font-size:18px">パスワード変更</h2>'
+        + '<p style="margin:0 0 12px;font-size:12px;color:var(--muted,#4a5870)">' + (forced ? '初回ログインのため、新しいパスワードを設定してください。' : '') + '12文字以上。職員ID・氏名を含めず、直近のパスワードとは別のものにしてください。変更すると他の端末のログインは解除されます。</p>'
+        + inp('pwCur', '現在のパスワード', 'current-password') + inp('pwNew', '新しいパスワード（12文字以上）', 'new-password') + inp('pwNew2', '新しいパスワード（確認）', 'new-password')
+        + '<div style="display:flex;gap:8px"><button id="pwOk" type="submit" style="flex:1;padding:10px;font-size:15px;background:var(--accent,#0a6bd1);color:var(--accent-fg,#fff);border:0;border-radius:var(--r-s,12px);cursor:pointer">変更する</button>'
+        + (forced ? '<button id="pwOut" type="button" style="padding:10px;font-size:14px">ログアウト</button>' : '<button id="pwCancel" type="button" style="padding:10px;font-size:14px">キャンセル</button>') + '</div>'
+        + '<div id="pwMsg" role="alert" style="min-height:1.4em;margin-top:10px;font-size:13px;color:var(--err,#d93025)"></div></form>';
+      document.body.appendChild(ov);
+      const done = () => { ov.remove(); document.removeEventListener('keydown', onKey, true); resolve(); };
+      const onKey = e => { if (e.key === 'Escape' && !forced){ e.stopPropagation(); done(); } };
+      document.addEventListener('keydown', onKey, true);
+      q('#pwCur').focus();
+      if (forced) q('#pwOut').onclick = async () => { try { await call('POST', '/api/logout', {}); } catch (e) {} location.reload(); };
+      else q('#pwCancel').onclick = done;
+      q('#pwForm').onsubmit = async e => {
+        e.preventDefault();
+        const msg = q('#pwMsg'), cur = q('#pwCur').value, nw = q('#pwNew').value;
+        msg.style.color = 'var(--err,#d93025)'; msg.textContent = '';
+        if (nw !== q('#pwNew2').value){ msg.textContent = '新しいパスワードが一致しません'; return; }
+        if (nw.length < 12){ msg.textContent = 'パスワードは12文字以上にしてください'; return; }
+        const btn = q('#pwOk'); btn.disabled = true;
+        try {
+          const r = await call('POST', '/api/password', { current: cur, next: nw });
+          if (r.ok){
+            q('#pwCur').value = q('#pwNew').value = q('#pwNew2').value = '';
+            if (SRV.user) SRV.user.mustChange = false;
+            msg.style.color = 'var(--mint,#0e9f78)'; msg.textContent = 'パスワードを変更しました';
+            state('パスワードを変更しました（他の端末のログインは解除されました）', 'ok');
+            setTimeout(done, 900); return;
+          }
+          msg.textContent = (r.json && r.json.message) || 'パスワードを変更できません';
+        } catch (err) { msg.textContent = 'サーバーに接続できません'; }
+        btn.disabled = false;
       };
     });
   }
@@ -1650,7 +1851,8 @@ document.addEventListener('click', e => {
     if (box) return;
     box = document.createElement('div'); box.id = 'authBox';
     box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--surface,#fff);border-top:1px solid var(--line,#cfe0ef);padding:4px 12px;font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--fg,#1f2a44)';
-    box.innerHTML = '<span id="srvRole"></span><label>月：<select id="srvMonth"></select></label><span id="srvState" aria-live="polite"></span><span id="srvAct"></span><span style="flex:1"></span><button id="srvOut" type="button">ログアウト</button>';
+    box.innerHTML = '<span id="srvRole"></span><label>月：<select id="srvMonth"></select></label><span id="srvState" aria-live="polite"></span><span id="srvAct"></span><span style="flex:1"></span><button id="srvPw" type="button">パスワード変更</button><button id="srvOut" type="button">ログアウト</button>';
+    q('#srvPw').onclick = () => { pwDialog(false); };
     document.body.appendChild(box); document.body.style.paddingBottom = '40px';
     q('#srvMonth').onchange = async e => { await switchMonth(e.target.value); };
     q('#srvOut').onclick = async () => {
@@ -1674,7 +1876,7 @@ document.addEventListener('click', e => {
     document.body.dataset.role = SRV.user ? SRV.user.role : '';
     if (SRV.readonly) document.body.dataset.readonly = '1'; else delete document.body.dataset.readonly;
     if (!SRV.readonly) return;
-    document.querySelectorAll('header button, main button, main input, main select, main textarea').forEach(el => { if (!KEEP.has(el.id) && !el.closest('#authBox') && !el.disabled) el.disabled = true; });
+    document.querySelectorAll('header button, main button, main input, main select, main textarea').forEach(el => { if (!KEEP.has(el.id) && !el.closest('#authBox') && !el.closest('#p-export') && !el.disabled) el.disabled = true; });
   }
   function setReadonly(ro){
     SRV.readonly = ro;
@@ -1768,6 +1970,7 @@ document.addEventListener('click', e => {
     { const n = document.querySelector('#p-import .note'); if (n) n.innerHTML = n.innerHTML.replace('職員名等の個人情報はこの端末のブラウザ内にのみ保存され、外部へ送信されません。', '取り込んだデータは<b>社内サーバーに保存</b>され、権限に応じて閲覧・編集できます（操作は監査ログに記録されます）。'); }
     if (mode === 'login') await showLogin();
     buildBox(); q('#srvRole').textContent = roleText();
+    if (SRV.user && SRV.user.mustChange) await pwDialog(true);
     try { const r = await call('GET', '/api/months'); months = (r.json && r.json.months) || []; } catch (e) {}
     fillMonths();
     if (months.length && await loadMonth(months[months.length - 1])) return;

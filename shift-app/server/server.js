@@ -6,7 +6,8 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { ROLES, verifyPassword, hashPassword, loadUsers, dataDir } = require('./userstore');
+const net = require('net');
+const { ROLES, verifyPassword, hashPassword, loadUsers, saveUsers, dataDir } = require('./userstore');
 
 const PORT = process.env.PORT === undefined ? 8443 : +process.env.PORT;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -19,13 +20,25 @@ const MAX_BODY = 5 * 1024 * 1024;
 const LOCK_FAILS = 5, LOCK_WINDOW = 10 * 60 * 1000, IP_FAILS = 30;
 const INDEX = path.join(__dirname, '..', 'index.html');
 
-const MONTHS = path.join(DATA, 'months'), BACKUPS = path.join(DATA, 'backups'), AUDIT = path.join(DATA, 'audit.log');
-for (const d of [DATA, MONTHS, BACKUPS]) fs.mkdirSync(d, { recursive: true, mode: 0o700 });
+// リバースプロキシ配下の設定（既定は信用しない）
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
+// X-Forwarded-For を信用する直接接続元（既定はループバックのみ。別ホストのプロキシは TRUST_PROXY_IPS にカンマ区切りで）
+const TRUST_PROXY_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'].concat(String(process.env.TRUST_PROXY_IPS || '').split(',').map(s => s.trim()).filter(Boolean)));
+const PUBLIC_ORIGINS = new Set(String(process.env.PUBLIC_ORIGIN || '').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean));
+// 監査ログ：月次または AUDIT_MAX_BYTES でローテーション。AUDIT_RETENTION_DAYS 未設定なら削除しない
+const AUDIT_RETENTION_DAYS = +process.env.AUDIT_RETENTION_DAYS > 0 ? +process.env.AUDIT_RETENTION_DAYS : 0;
+const AUDIT_MAX_BYTES = +process.env.AUDIT_MAX_BYTES > 0 ? +process.env.AUDIT_MAX_BYTES : 5 * 1024 * 1024;
+const PW_MIN = 12, PW_MAX = 128;
+
+const MONTHS = path.join(DATA, 'months'), BACKUPS = path.join(DATA, 'backups'), AUDIT = path.join(DATA, 'audit.log'), AUDIT_DIR = path.join(DATA, 'audit'), SESS_FILE = path.join(DATA, 'sessions.json');
+for (const d of [DATA, MONTHS, BACKUPS, AUDIT_DIR]) fs.mkdirSync(d, { recursive: true, mode: 0o700 });
 
 // ---------- 共通 ----------
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
-const sessions = new Map(); // token -> { id, exp }
+const sessions = new Map(); // SHA-256(token) -> { id, exp, pv }  ※トークン自体は保持・保存しない
 const fails = new Map();    // key -> { n, first, until }
+const tokHash = t => crypto.createHash('sha256').update(String(t)).digest('hex');
+const pvOf = u => String((u && (u.pwChangedAt || u.createdAt)) || '');
 
 const SEC_HEADERS = {
   'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
@@ -44,10 +57,38 @@ function send(res, code, body, extra) {
 }
 const err = (res, code, error, message, extra) => send(res, code, { error, message, shiftapp: true }, extra);
 
+let auditMonth = null; // 現在の audit.log が属する月（YYYY-MM）
+const monthOf = d => d.toISOString().slice(0, 7);
+try { auditMonth = monthOf(fs.statSync(AUDIT).mtime); } catch (e) { /* none */ }
+function rotateAudit(now) {
+  let st; try { st = fs.statSync(AUDIT); } catch (e) { auditMonth = monthOf(now); return; }
+  const m = auditMonth || monthOf(st.mtime), cur = monthOf(now);
+  if (m === cur && st.size < AUDIT_MAX_BYTES) { auditMonth = cur; return; }
+  fs.mkdirSync(AUDIT_DIR, { recursive: true, mode: 0o700 });
+  let n = 0, dest;
+  do { n++; dest = path.join(AUDIT_DIR, `audit-${m}${n > 1 ? '-' + n : ''}.log`); } while (fs.existsSync(dest));
+  fs.renameSync(AUDIT, dest); auditMonth = cur;
+  fs.appendFileSync(AUDIT, JSON.stringify({ ts: now.toISOString(), event: 'audit_rotate', file: path.basename(dest) }) + '\n', { mode: 0o600 });
+}
+function purgeAudit() {
+  if (!AUDIT_RETENTION_DAYS) return;
+  const limit = Date.now() - AUDIT_RETENTION_DAYS * 86400000; let n = 0;
+  try {
+    for (const f of fs.readdirSync(AUDIT_DIR)) {
+      if (!/^audit-.*\.log$/.test(f)) continue;
+      const fp = path.join(AUDIT_DIR, f);
+      if (fs.statSync(fp).mtimeMs < limit) { fs.unlinkSync(fp); n++; }
+    }
+  } catch (e) { console.error('audit purge failed', e.message); }
+  if (n) audit({ event: 'audit_purge', removed: n, days: AUDIT_RETENTION_DAYS });
+}
 function audit(ev) {
   // 勤務内容・パスワード・トークンは書かない（誰が・いつ・何を・どの月/部署）
-  try { fs.appendFileSync(AUDIT, JSON.stringify(Object.assign({ ts: new Date().toISOString() }, ev)) + '\n', { mode: 0o600 }); }
-  catch (e) { console.error('audit write failed', e.message); }
+  try {
+    const now = new Date();
+    try { rotateAudit(now); } catch (e) { console.error('audit rotate failed', e.message); }
+    fs.appendFileSync(AUDIT, JSON.stringify(Object.assign({ ts: now.toISOString() }, ev)) + '\n', { mode: 0o600 });
+  } catch (e) { console.error('audit write failed', e.message); }
 }
 function atomicWrite(file, text) {
   const tmp = file + '.' + process.pid + '.' + crypto.randomBytes(4).toString('hex') + '.tmp';
@@ -86,7 +127,7 @@ function perms(u) {
     canWriteAny: admin || (m && g.size > 0),
   };
 }
-const publicUser = (id, u) => ({ id, name: u.name, role: u.role, roleLabel: ROLES[u.role], groups: u.role === 'admin' ? ['*'] : (u.groups || []) });
+const publicUser = (id, u) => ({ id, name: u.name, role: u.role, roleLabel: ROLES[u.role], groups: u.role === 'admin' ? ['*'] : (u.groups || []), mustChange: !!u.mustChange });
 
 // ---------- 月データ ----------
 const monthFile = ym => path.join(MONTHS, ym + '.json');
@@ -189,34 +230,76 @@ function backup(ym, version, text) {
 
 // ---------- 認証 ----------
 const DUMMY = hashPassword('dummy-password-for-timing');
-function ipOf(req) { return req.socket.remoteAddress || '?'; }
+function ipOf(req) {
+  const peer = req.socket.remoteAddress || '?';
+  // TRUST_PROXY=1 かつ直接の接続元が許可プロキシのときだけ X-Forwarded-For の先頭を使う（プロキシ側で上書き設定すること）
+  if (TRUST_PROXY && TRUST_PROXY_IPS.has(peer)) {
+    const first = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (first && net.isIP(first)) return first;
+  }
+  return peer;
+}
+// セッション・ロック状態の永続化（data/sessions.json, 0600。トークンはSHA-256のみ）
+function persist() {
+  try { atomicWrite(SESS_FILE, JSON.stringify({ sessions: Object.fromEntries(sessions), locks: Object.fromEntries(fails) })); }
+  catch (e) { console.error('state write failed', e.message); }
+}
+(function loadState() {
+  try {
+    const j = JSON.parse(fs.readFileSync(SESS_FILE, 'utf8')), now = Date.now();
+    for (const [h, s] of Object.entries(j.sessions || {})) if (s && typeof s.id === 'string' && s.exp > now && /^[0-9a-f]{64}$/.test(h)) sessions.set(h, { id: s.id, exp: s.exp, pv: String(s.pv || '') });
+    for (const [k, f] of Object.entries(j.locks || {})) if (f && ((f.until && f.until > now) || (!f.until && now - f.first <= LOCK_WINDOW))) fails.set(k, { n: +f.n || 0, first: +f.first || now, until: +f.until || 0 });
+  } catch (e) { /* 初回・破損時は空で開始 */ }
+})();
 function lockInfo(key) {
   const f = fails.get(key); const now = Date.now();
   if (!f) return 0;
   if (f.until && f.until > now) return f.until - now;
-  if (f.until || now - f.first > LOCK_WINDOW) fails.delete(key);
+  if (f.until || now - f.first > LOCK_WINDOW) { fails.delete(key); persist(); }
   return 0;
 }
 function addFail(key, limit) {
   const now = Date.now(); let f = fails.get(key);
   if (!f || now - f.first > LOCK_WINDOW) f = { n: 0, first: now, until: 0 };
   f.n++; if (f.n >= limit) f.until = now + LOCK_WINDOW;
-  fails.set(key, f);
+  fails.set(key, f); persist();
 }
 function auth(req) {
   const tok = parseCookies(req.headers.cookie).sid;
-  const s = tok && sessions.get(tok);
+  const th = tok && /^[0-9a-f]{64}$/.test(tok) ? tokHash(tok) : null;
+  const s = th && sessions.get(th);
   if (!s) return null;
-  if (s.exp < Date.now()) { sessions.delete(tok); return null; }
-  const u = loadUsers()[s.id];
-  if (!u || u.disabled) { sessions.delete(tok); return null; }
-  return { id: s.id, user: u, tok };
+  if (s.exp < Date.now()) { sessions.delete(th); persist(); return null; }
+  const users = loadUsers(), u = Object.prototype.hasOwnProperty.call(users, s.id) ? users[s.id] : null;
+  // 無効化・パスワード再発行（CLI）でも失効
+  if (!u || u.disabled || s.pv !== pvOf(u)) { sessions.delete(th); persist(); return null; }
+  return { id: s.id, user: u, th };
 }
-setInterval(() => {
-  const now = Date.now();
-  for (const [t, s] of sessions) if (s.exp < now) sessions.delete(t);
-  for (const [k, f] of fails) if ((f.until && f.until < now) || now - f.first > LOCK_WINDOW) fails.delete(k);
-}, 60 * 1000).unref();
+function sweep() {
+  const now = Date.now(); let ch = false;
+  for (const [t, s] of sessions) if (s.exp < now) { sessions.delete(t); ch = true; }
+  for (const [k, f] of fails) if ((f.until && f.until < now) || (!f.until && now - f.first > LOCK_WINDOW)) { fails.delete(k); ch = true; }
+  if (ch) persist();
+}
+setInterval(sweep, 60 * 1000).unref();
+sweep(); purgeAudit();
+setInterval(purgeAudit, 6 * 3600 * 1000).unref();
+
+// ---------- パスワードポリシー ----------
+const norm = s => String(s || '').normalize('NFKC').toLowerCase();
+async function checkNewPassword(pw, id, u) {
+  if (typeof pw !== 'string' || pw.length < PW_MIN) return `パスワードは${PW_MIN}文字以上にしてください`;
+  if (pw.length > PW_MAX) return `パスワードは${PW_MAX}文字以内にしてください`;
+  const n = norm(pw);
+  if (new Set(Array.from(n)).size < 5) return '同じ文字の繰り返しなど、推測されやすいパスワードは使えません';
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter(r => r.test(pw.normalize('NFKC'))).length;
+  if (classes < 2) return '英大文字・小文字・数字・記号・日本語のうち2種類以上を組み合わせてください';
+  if (id.length >= 3 && n.includes(norm(id))) return 'パスワードに職員IDを含めないでください';
+  const parts = [String(u.name || '')].concat(String(u.name || '').split(/[\s\u3000]+/));
+  for (const p of parts) { const pn = norm(p).replace(/[\s\u3000]/g, ''); if (pn.length >= 2 && n.includes(pn)) return 'パスワードに氏名を含めないでください'; }
+  for (const h of [u.hash].concat(u.prevHashes || [])) if (h && await verifyPassword(pw, h)) return '現在または直近のパスワードと同じものは使えません';
+  return '';
+}
 
 // ---------- ハンドラ ----------
 async function handle(req, res) {
@@ -236,7 +319,10 @@ async function handle(req, res) {
   if (method !== 'GET') {
     if (req.headers['x-requested-with'] !== 'shiftapp') return err(res, 403, 'csrf', '不正なリクエストです（CSRF対策ヘッダなし）');
     const origin = req.headers.origin;
-    if (origin) { let oh = ''; try { oh = new URL(origin).host; } catch (e) { /* */ } if (oh !== req.headers.host) return err(res, 403, 'csrf', '不正なリクエストです（Origin）'); }
+    if (origin) {
+      let oh = '', oo = ''; try { const o = new URL(origin); oh = o.host; oo = o.origin; } catch (e) { /* */ }
+      if (oh !== req.headers.host && !PUBLIC_ORIGINS.has(oo)) return err(res, 403, 'csrf', '不正なリクエストです（Origin）');
+    }
   }
 
   if (p === '/api/login' && method === 'POST') {
@@ -257,7 +343,7 @@ async function handle(req, res) {
     }
     fails.delete(key);
     const tok = crypto.randomBytes(32).toString('hex');
-    sessions.set(tok, { id, exp: Date.now() + SESSION_MS });
+    sessions.set(tokHash(tok), { id, exp: Date.now() + SESSION_MS, pv: pvOf(u) }); persist();
     audit({ event: 'login_ok', user: id, ip, role: u.role });
     return send(res, 200, publicUser(id, u), {
       'Set-Cookie': `sid=${tok}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESSION_MS / 1000)}${SECURE_COOKIE ? '; Secure' : ''}`,
@@ -268,8 +354,36 @@ async function handle(req, res) {
   if (!a) return err(res, 401, 'unauthorized', 'ログインが必要です');
   const P = perms(a.user);
 
+  if (a.user.mustChange && p !== '/api/password' && p !== '/api/logout' && p !== '/api/me') {
+    return err(res, 403, 'must_change', '初回ログインのため、先にパスワードを変更してください');
+  }
+
+  if (p === '/api/password' && method === 'POST') {
+    const b = await readBody(req);
+    const cur = typeof b.current === 'string' ? b.current.slice(0, 200) : '', nw = typeof b.next === 'string' ? b.next : '';
+    const key = ip + '|' + a.id.toLowerCase();
+    const wait = lockInfo(key);
+    if (wait) { audit({ event: 'password_change_locked', user: a.id, ip }); return err(res, 429, 'locked', '失敗が続いたため一時的にロックされています。しばらくしてからやり直してください。', { 'Retry-After': String(Math.ceil(wait / 1000)) }); }
+    if (!(await verifyPassword(cur, a.user.hash))) {
+      addFail(key, LOCK_FAILS); audit({ event: 'password_change_fail', user: a.id, ip, reason: 'bad_current' });
+      return err(res, 400, 'bad_current', '現在のパスワードが違います');
+    }
+    const problem = await checkNewPassword(nw, a.id, a.user);
+    if (problem) { audit({ event: 'password_change_fail', user: a.id, ip, reason: 'policy' }); return err(res, 400, 'policy', problem); }
+    const users = loadUsers(), cu = Object.prototype.hasOwnProperty.call(users, a.id) ? users[a.id] : null;
+    if (!cu) return err(res, 401, 'unauthorized', 'ログインが必要です');
+    cu.prevHashes = [cu.hash].concat(cu.prevHashes || []).slice(0, 3);
+    cu.hash = await hashPassword(nw); cu.mustChange = false; cu.pwChangedAt = new Date().toISOString();
+    saveUsers(users);
+    for (const [h, s] of sessions) if (s.id === a.id && h !== a.th) sessions.delete(h); // 他の端末のセッションを失効
+    const mine = sessions.get(a.th); if (mine) mine.pv = pvOf(cu);
+    fails.delete(key); persist();
+    audit({ event: 'password_change', user: a.id, ip });
+    return send(res, 200, { ok: true });
+  }
+
   if (p === '/api/logout' && method === 'POST') {
-    sessions.delete(a.tok); audit({ event: 'logout', user: a.id, ip });
+    sessions.delete(a.th); persist(); audit({ event: 'logout', user: a.id, ip });
     return send(res, 200, { ok: true }, { 'Set-Cookie': `sid=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${SECURE_COOKIE ? '; Secure' : ''}` });
   }
   if (p === '/api/me' && method === 'GET') return send(res, 200, publicUser(a.id, a.user));
