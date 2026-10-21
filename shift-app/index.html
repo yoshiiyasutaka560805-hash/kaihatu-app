@@ -1640,6 +1640,7 @@ document.addEventListener('click', e => {
     }
     if (mode === 'local'){ load(); show(S ? 'sheet' : 'import'); return; }
     SRV.on = true;
+    { const n = document.querySelector('#p-import .note'); if (n) n.innerHTML = n.innerHTML.replace('職員名等の個人情報はこの端末のブラウザ内にのみ保存され、外部へ送信されません。', '取り込んだデータは<b>社内サーバーに保存</b>され、権限に応じて閲覧・編集できます（操作は監査ログに記録されます）。'); }
     if (mode === 'login') await showLogin();
     buildBox(); q('#srvRole').textContent = roleText();
     try { const r = await call('GET', '/api/months'); months = (r.json && r.json.months) || []; } catch (e) {}
