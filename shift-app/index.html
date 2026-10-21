@@ -769,7 +769,7 @@ function generateAll(S, mode){
 // ---- 常勤換算（e3Shift「常勤換算値出力」の考え方：常勤換算値＝勤務時間合計÷1週間基本時間）----
 const hmToH = x => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(x || '')); return m ? +m[1] + (+m[2]) / 60 : null; };
 function defaultFte(){
-  return { confirmed: true, weekHours: 40, method: 'cal', night: { s: '17:00', e: '09:00' },
+  return { confirmed: true, weekHours: 40, method: 'cal', night: { s: '16:00', e: '09:00' },
     hours: { '早': { s: '07:00', e: '16:00', brk: 1 }, '日': { s: '08:30', e: '17:30', brk: 1 }, '遅': { s: '10:00', e: '19:00', brk: 1 },
              '遅E': { s: '12:00', e: '21:00', brk: 1 }, '準夜勤': { s: '22:00', e: '07:00', brk: 1 }, '夜': { s: '16:00', e: '09:00', brk: 1.5 },
              '午前': { s: '08:30', e: '12:30', brk: 0 }, '午後': { s: '13:30', e: '17:30', brk: 0 } },
@@ -874,6 +874,7 @@ function migrateFteHours(S){
   const o = { '遅': ['11:00', '20:00', 1], '準夜勤': ['16:00', '21:00', 0], '夜': ['16:30', '09:30', 2], '遅E': ['12:30', '21:30', 1] }, n = defaultFte().hours;
   for (const k in o){ const h = S.fte.hours[k]; if (h && h.s === o[k][0] && h.e === o[k][1] && +h.brk === o[k][2]) S.fte.hours[k] = n[k]; }
   for (const k of ['午前', '午後']) if (!S.fte.hours[k]) S.fte.hours[k] = n[k];
+  if (S.fte.night && S.fte.night.s === '17:00' && S.fte.night.e === '09:00') S.fte.night = { s: '16:00', e: '09:00' };
   if (!S.fte.e3 && S.colors && S.shiftList) applyE3Patterns(S);
   else if (!S.fte.legalBrk && S.fte.e3){ if (!S.fte.exclude) S.fte.exclude = ['宿直']; applyLegalBreaks(S); }
 }
@@ -1094,7 +1095,7 @@ function renderFte(){
   let h = `<p class="note">e3Shift「常勤換算値出力」と同じ考え方：<b>常勤換算値＝勤務時間合計÷1週間基本時間</b>（「1固定」の職員は1.0）。有休・特休等は常勤のみ勤務時間に加算、非常勤は含みません。兼務・出張用シフトは扱いません（同じ職員が複数部署に載る場合は部署ごとに別行で集計）。<b>試算です。制度上の常勤換算は、指定権者の解釈・施設の取扱いで確認してください。</b></p>`;
   { const nb = Object.keys(F.hours).filter(k => F.hours[k].brkFlag && !(+F.hours[k].brk) && spanOf(F.hours[k]) > 6).length; if (nb) h += `<p class="bad">休憩設定が有のパターンのうち、休憩時間が未設定のものが<b>${nb}件</b>あります（その分、勤務時間が長めに計算されます）。「⑦ マスタ・台帳」で休憩(h)を入力してください。</p>`; }
   if (!F.confirmed) h += `<p class="bad"><b>勤務時間の初期値は仮置きです。</b>「⑦ マスタ・台帳」のシフト種別マスタで実際の時間に直してから <button id="bFteOk" class="pri">確認済みにする</button></p>`;
-  h += `<h4>設定</h4><p>1週間基本時間（新規の既定）：<input type="number" id="fWeek" value="${F.weekHours}" style="width:60px">h　月の週数：<select id="fMethod"><option value="cal" ${F.method === 'cal' ? 'selected' : ''}>暦日数÷7（${f2(S.D / 7)}週）</option><option value="4" ${F.method === '4' ? 'selected' : ''}>4週固定</option></select>　夜勤時間帯：<input id="fNs" value="${F.night.s}" size="5">〜<input id="fNe" value="${F.night.e}" size="5">（例 17:00〜09:00）</p>
+  h += `<h4>設定</h4><p>1週間基本時間（新規の既定）：<input type="number" id="fWeek" value="${F.weekHours}" style="width:60px">h　月の週数：<select id="fMethod"><option value="cal" ${F.method === 'cal' ? 'selected' : ''}>暦日数÷7（${f2(S.D / 7)}週）</option><option value="4" ${F.method === '4' ? 'selected' : ''}>4週固定</option></select>　夜勤時間帯：<input id="fNs" value="${F.night.s}" size="5">〜<input id="fNe" value="${F.night.e}" size="5">（例 16:00〜09:00）</p>
   <p class="note">各シフトの時間は「⑦ マスタ・台帳」のシフト種別マスタで設定します。</p>`;
   h += `<p class="note">「9-15」のような時間表記は、そのまま（終了−開始）を実働とします（休憩は引きません）。休暇の扱い：` + Object.keys(F.leave).map(k => `${k}<select data-fl="${k}">${[['add', '常勤のみ加算'], ['work', '勤務扱い'], ['none', '算入しない']].map(o => `<option value="${o[0]}" ${F.leave[k] === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`).join(' ') + '</p>';
   h += `<h4>集計</h4><table class="t"><tr><th>職種（部署）</th><th>常勤換算値 全体</th><th>常勤</th><th>非常勤</th></tr>`;
