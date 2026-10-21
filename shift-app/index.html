@@ -417,6 +417,7 @@ function initExtras(t, S){
   if (t.holidayOk === undefined) t.holidayOk = true;
   if (t.canEarly === undefined){ t.canEarly = true; t.canDay = true; t.canLate = true; }
   if (t.nightFixed === undefined) t.nightFixed = null;
+  if (t.nightMax === undefined){ t.nightMax = null; t.junMax = null; t.maxConsec = null; }
   if (!t.req){
     t.req = t.cells.map(c => cls(c) === 'leave' ? c : '');
     t.reqApplied = t.req.map(r => !!r);
@@ -513,7 +514,7 @@ function inferNeeds(S, useMin){
 // ルールチェック（自動作成の点数づけと画面表示で共用）
 // 職員1人ぶん（連続勤務・夜勤明け・公休数など）。add(sev, 職員, 日, 文言, 重み)
 function personCheck(t, S, add){
-  const D = S.D, max = S.maxConsec, c = t.cells; let run = 0, rest = 0;
+  const D = S.D, max = t.maxConsec || S.maxConsec, c = t.cells; let run = 0, rest = 0, nn = 0, jj = 0;
   for (let d = 0; d < D; d++){
     const v = c[d];
     if (v === '夜' && d + 1 < D){
@@ -526,7 +527,11 @@ function personCheck(t, S, add){
     if (isWorkish(v)){ run++; if (run === max + 1) add('E', t, d, `連続勤務が${max}日を超えています`); }
     else run = 0;
     if (v === '公') rest++;
+    if (v === '夜') nn++;
+    if (v === '準夜勤') jj++;
   }
+  if (t.nightMax != null && nn > t.nightMax) add('E', t, -1, `夜勤が${nn}回（上限${t.nightMax}回）`);
+  if (t.junMax != null && jj > t.junMax) add('E', t, -1, `準夜勤が${jj}回（上限${t.junMax}回）`);
   if (t.target > 0 && rest !== t.target) add('E', t, -1, `公休が${rest}日（目標${t.target}日）`);
 }
 // シフト×範囲ごとの人数（目標・最低・名称）。日ごとに引き直すと山登り法で極端に遅くなるので1回だけ作る
@@ -549,18 +554,29 @@ function coverCheck(list, di, d, add){
     else if (n > need && sh !== '日') add('W', null, d, `${nm}が${n}人（必要${need}人）で多い`);
   }
 }
-function nightSpread(U){
-  const nc = U.staff.filter(t => t.canNight && t.nightFixed == null).map(t => t.cells.filter(x => x === '夜').length);
-  if (nc.length){ const df = Math.max(...nc) - Math.min(...nc); if (df > 1) return 6 * (df - 1); }
-  return 0;
+// 夜勤・準夜勤の回数のばらつき（出られる日が少ない人・個別に上限や回数を指定した人は除く）。差が1回以内なら0
+// 採用前・休職・退職・休暇で出られない日数
+function awayDays(S, t){ let n = 0; for (let d = 0; d < S.D; d++) if (d < t.from || unavail(S, t, d) || cls(t.cells[d]) === 'leave') n++; return n; }
+function spreadOf(U, S, key, can){
+  // 夜勤はユニット（AB/CD）ごとに毎日の人数が決まっているので、ユニット内で比べる。準夜勤はフロア共通
+  const groups = key === '夜' ? U.labels.map(l => U.staff.filter(t => t.label === l)) : [U.staff];
+  let pen = 0;
+  for (const g of groups){
+    const m = g.filter(t => t[can] && t.nightFixed == null && (key === '夜' ? t.nightMax == null : t.junMax == null) && awayDays(S, t) <= S.D * 0.2);
+    if (m.length < 2) continue;
+    const nc = m.map(t => t.cells.filter(x => x === key).length), df = Math.max(...nc) - Math.min(...nc);
+    if (df > 1) pen += 25 * (df - 1);
+  }
+  return pen;
 }
+function nightSpread(U, S){ return spreadOf(U, S, '夜', 'canNight') + spreadOf(U, S, '準夜勤', 'canJun'); }
 function checkUnit(U, S, di, out){
   let score = 0; const D = S.D;
   const add = (sev, t, d, msg, w) => { score += sev === 'E' ? 100 : (w || 12); if (out) out.push({ sev, unit: U.key, s: t ? t.id : -1, d, msg }); };
   for (const t of U.staff) personCheck(t, S, add);
   const list = coverList(U, S);
   for (let d = 0; d < D; d++) coverCheck(list, di, d, add);
-  return score + nightSpread(U);
+  return score + nightSpread(U, S);
 }
 function validateAll(S){
   const di = dayInfo(S), out = []; let total = 0;
@@ -570,6 +586,7 @@ function validateAll(S){
     const rq = t.req.filter(r => r === '希望休').length;
     if (!t.reqExempt && S.reqLimit != null && rq > S.reqLimit){ out.push({ sev: 'W', unit: secT, s: t.id, d: -1, msg: `希望休が${rq}日（上限${S.reqLimit}日）` }); total += 12; }
     t.cells.forEach((v, d) => { if (v && unavail(S, t, d)){ out.push({ sev: 'E', unit: secT, s: t.id, d, msg: '採用前・休職中・退職後の日に勤務が入っています' }); total += 100; } });
+    if (!t.auto && t.part){ const lim = t.maxConsec || S.maxConsec; let run = 0; t.cells.forEach((v, d) => { if (isWorkish(v)){ run++; if (run === lim + 1){ out.push({ sev: 'E', unit: secT, s: t.id, d, msg: `連続勤務が${lim}日を超えています` }); total += 100; } } else run = 0; }); }
     if (t.auto || !t.part) continue;
     const sec = secT;
     if (t.holidayOk === false) t.cells.forEach((v, d) => { if (cls(v) === 'work' && S.holidays.includes(d + 1)){ out.push({ sev: 'W', unit: sec, s: t.id, d, msg: '祝日出勤不可の職員に祝日の勤務が入っています' }); total += 12; } });
@@ -637,6 +654,7 @@ function genUnit(U, S, di, mode, seed){
           if (d + 1 < D && !free(i, d + 1)) continue;
           if (!nextOk(i, d + 2) || runBefore(i, d) > max - 2) continue;
           if (useCap && nCount(i) >= Math.ceil(nT[i])) continue;
+          if (st[i].nightMax != null && nCount(i) >= st[i].nightMax) continue;
           cand.push([(nCount(i) + 1) / Math.max(nT[i], 0.5) + rnd() * 0.4, i]);
         }
         if (cand.length) break;
@@ -662,6 +680,7 @@ function genUnit(U, S, di, mode, seed){
           if (!st[i].canJun || !free(i, d) || runBefore(i, d) > max - 1) continue;
           if (d + 1 < D && !(free(i, d + 1) || c[i][d+1] === '公')) continue;
           if (useCap && jCount(i) >= Math.ceil(jT[i])) continue;
+          if (st[i].junMax != null && jCount(i) >= st[i].junMax) continue;
           cand.push([(jCount(i) + 1) / Math.max(jT[i], 0.5) + rnd() * 0.4, i]);
         }
         if (cand.length) break;
@@ -729,7 +748,7 @@ function genUnit(U, S, di, mode, seed){
   const pS = i => { let s = 0; personCheck(st[i], S, (sev, t, d, msg, w) => { s += sev === 'E' ? 100 : (w || 12); }); return s; };
   const dS = d => { let s = 0; coverCheck(wl, di, d, (sev, t, dd, msg, w) => { s += sev === 'E' ? 100 : (w || 12); }); return s; };
   const P = st.map((t, i) => pS(i)), C = []; for (let d = 0; d < D; d++) C.push(dS(d));
-  let cur = P.reduce((a, b) => a + b, 0) + C.reduce((a, b) => a + b, 0) + nightSpread(U);
+  let cur = P.reduce((a, b) => a + b, 0) + C.reduce((a, b) => a + b, 0) + nightSpread(U, S);
   for (let it = 0; it < 12000 && cur > 0; it++){
     const i = (rnd() * n) | 0, j = (rnd() * n) | 0;
     let a, b, x, y;
@@ -749,6 +768,44 @@ function genUnit(U, S, di, mode, seed){
       if (s2 <= cur){ cur = s2; P[i] = pi; P[j] = pj; C[a] = na; } else [c[i][a], c[j][a]] = [c[j][a], c[i][a]];
     }
   }
+  // 夜勤・準夜勤の回数をそろえる：多い人と少ない人で、夜勤ひとまとまり（夜・明・翌日／準夜勤・翌日）を丸ごと入れかえる
+  const okSpread = (i, key) => st[i][key === '夜' ? 'canNight' : 'canJun'] && st[i].nightFixed == null && (key === '夜' ? st[i].nightMax == null : st[i].junMax == null) && awayDays(S, st[i]) <= D * 0.2;
+  const total = () => { let t = nightSpread(U, S); for (let i = 0; i < n; i++) t += pS(i); for (let d = 0; d < D; d++) t += dS(d); return t; };
+  const rebalance = (key, len) => {
+    for (let round = 0; round < 80; round++){
+      const groupsR = key === '夜' ? U.labels : [null];
+      let mins = [], maxs = [];
+      for (const lab of groupsR){
+        const el = []; for (let i = 0; i < n; i++) if (okSpread(i, key) && (lab === null || st[i].label === lab)) el.push([c[i].filter(x => x === key).length, i]);
+        if (el.length < 2) continue;
+        el.sort((x, y) => x[0] - y[0]);
+        const lo = el[0][0], hi = el[el.length - 1][0]; if (hi - lo <= 1) continue;
+        mins = mins.concat(el.filter(x => x[0] === lo).map(x => x[1])); maxs = maxs.concat(el.filter(x => x[0] === hi).map(x => x[1]));
+      }
+      if (!mins.length) return;
+      let moved = false, base = total();
+      const pairs = []; for (const iMin of mins) for (const iMax of maxs) if (key !== '夜' || st[iMin].label === st[iMax].label) pairs.push([iMin, iMax]);
+      pairs.sort((x, y) => (st[x[0]].label === st[x[1]].label ? 0 : 1) - (st[y[0]].label === st[y[1]].label ? 0 : 1));
+      search: for (const [iMin, iMax] of pairs) for (let d = 0; d < D; d++){
+        if (c[iMax][d] !== key) continue;
+        const L = Math.min(len, D - d); let ok = true, kMax = 0, kMin = 0;
+        for (let k = 0; k < L && ok; k++){
+          if (lock[iMax][d + k] || lock[iMin][d + k]) { ok = false; break; }
+          const vm = c[iMin][d + k]; if (!['早', '日', '遅', '遅E', '公'].includes(vm)) ok = false;
+          if (vm === '公') kMin++; if (c[iMax][d + k] === '公') kMax++;
+          if (k > 0 && !allowSym(st[iMax], vm) && vm !== '公') ok = false;
+        }
+        if (!ok || kMax !== kMin) continue;
+        for (let k = 0; k < L; k++) [c[iMax][d + k], c[iMin][d + k]] = [c[iMin][d + k], c[iMax][d + k]];
+        if (total() < base){ moved = true; break search; }
+        for (let k = 0; k < L; k++) [c[iMax][d + k], c[iMin][d + k]] = [c[iMin][d + k], c[iMax][d + k]];
+      }
+      if (!moved) return;
+    }
+  };
+  rebalance('夜', 3); rebalance('準夜勤', 2);
+  for (let i = 0; i < n; i++) P[i] = pS(i); for (let d = 0; d < D; d++) C[d] = dS(d);
+  cur = P.reduce((a, b) => a + b, 0) + C.reduce((a, b) => a + b, 0) + nightSpread(U, S);
   const result = c.map(r => r.slice());
   st.forEach((t, i) => { t.cells = orig[i]; });
   return { cells: result, score: cur };
@@ -783,6 +840,21 @@ function genPart(t, S, mode, seed){
     chosen.push(best); load[weekOf(S, best)] = (load[weekOf(S, best)] || 0) + 1;
   }
   for (const d of freeDays) c[d] = chosen.includes(d) ? p.sym : p.restSym;
+  // 連続勤務の上限：超えた分は、同じ職員の別の出勤できる日と入れかえる
+  const lim = t.maxConsec || S.maxConsec;
+  for (let guard = 0; guard < 40; guard++){
+    let run = 0, bad = -1;
+    for (let d = 0; d < D; d++){ if (isWorkish(c[d])){ run++; if (run > lim){ bad = d; break; } } else run = 0; }
+    if (bad < 0) break;
+    let moved = false;
+    for (let k = 0; k < lim && !moved; k++){
+      const dd = bad - k; if (lock[dd] || !chosen.includes(dd)) continue;
+      const to = allowedFree.filter(x => !chosen.includes(x) && x !== dd).sort((x, y) => Math.abs(x - dd) - Math.abs(y - dd))[0];
+      if (to === undefined) continue;
+      chosen.splice(chosen.indexOf(dd), 1); chosen.push(to); c[dd] = p.restSym; c[to] = p.sym; moved = true;
+    }
+    if (!moved) break;
+  }
   return c;
 }
 function generateAll(S, mode){
@@ -1176,14 +1248,14 @@ function renderMaster(){
     h += `<tr><td><b>${esc(k)}</b></td><td>${esc(c.code || '')}</td><td>${esc(hh.s)}</td><td>${esc(hh.e)}</td><td>${hh.brkFlag ? '有' : ''}</td><td><input type="number" step="0.25" data-sm="${esc(k)}" data-f="brk" value="${hh.brk}" style="width:55px"></td><td>${sp ? (Math.round(sp.work * 100) / 100).toFixed(2) : '-'}</td></tr>`; }
   h += '</table></div></details>';
   h += `<h4>職員台帳</h4><p class="note">採用日・退職日・休職期間は、該当する日を自動で勤務対象外にします（空欄は制限なし）。「入れるシフト」は自動作成が参照します。休職・退職の期間に勤務が入っていると、エラーになります。</p>
-  <div style="overflow:auto;max-height:70vh"><table class="t"><tr><th>部署</th><th>職員</th><th>状況（今月）</th><th>採用日</th><th>退職日</th><th>休職開始</th><th>休職終了</th><th>職員ID<br>(社員コード)</th><th>祝日出勤可</th><th>早</th><th>日</th><th>遅</th><th>遅E</th><th>準夜</th><th>夜</th><th>備考</th></tr>`;
+  <div style="overflow:auto;max-height:70vh"><table class="t"><tr><th>部署</th><th>職員</th><th>状況（今月）</th><th>採用日</th><th>退職日</th><th>休職開始</th><th>休職終了</th><th>職員ID<br>(社員コード)</th><th>祝日出勤可</th><th>早</th><th>日</th><th>遅</th><th>遅E</th><th>準夜</th><th>夜</th><th>夜勤の月上限<br>(回)</th><th>準夜の月上限<br>(回)</th><th>連続勤務上限<br>(日)</th><th>備考</th></tr>`;
   for (const t of S.staff){
     const sec = S.sections.find(x => x.id === t.sec).title;
     let na = 0; for (let d = 0; d < S.D; d++) if (unavail(S, t, d)) na++;
     const st = na === 0 ? '全日対象' : na === S.D ? '全日対象外' : `${na}日対象外`;
     const chk = f => `<td><input type="checkbox" data-ld="${t.id}" data-f="${f}" ${t[f] !== false ? 'checked' : ''}></td>`;
     const dt = f => `<td><input type="date" data-ld="${t.id}" data-f="${f}" value="${t[f] || ''}"></td>`;
-    h += `<tr><td>${esc(sec)}</td><td>${esc(t.name)}</td><td class="${na ? 'bad' : ''}">${st}</td><td><input data-ld="${t.id}" data-f="empId" value="${esc(t.empId || '')}" size="8" placeholder="未入力"></td>${dt('hireDate')}${dt('retireDate')}${dt('leaveStart')}${dt('leaveEnd')}${chk('holidayOk')}${chk('canEarly')}${chk('canDay')}${chk('canLate')}<td><input type="checkbox" data-ld="${t.id}" data-f="canE" ${t.canE ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canJun" ${t.canJun ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canNight" ${t.canNight ? 'checked' : ''}></td><td><input data-ld="${t.id}" data-f="memo" value="${esc(t.memo || '')}" size="14"></td></tr>`;
+    h += `<tr><td>${esc(sec)}</td><td>${esc(t.name)}</td><td class="${na ? 'bad' : ''}">${st}</td><td><input data-ld="${t.id}" data-f="empId" value="${esc(t.empId || '')}" size="8" placeholder="未入力"></td>${dt('hireDate')}${dt('retireDate')}${dt('leaveStart')}${dt('leaveEnd')}${chk('holidayOk')}${chk('canEarly')}${chk('canDay')}${chk('canLate')}<td><input type="checkbox" data-ld="${t.id}" data-f="canE" ${t.canE ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canJun" ${t.canJun ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canNight" ${t.canNight ? 'checked' : ''}></td>${['nightMax', 'junMax', 'maxConsec'].map(f => `<td><input type="number" min="0" max="31" data-ld="${t.id}" data-f="${f}" value="${t[f] == null ? '' : t[f]}" placeholder="なし" style="width:56px"></td>`).join('')}<td><input data-ld="${t.id}" data-f="memo" value="${esc(t.memo || '')}" size="14"></td></tr>`;
   }
   p.innerHTML = h + '</table></div>';
 }
@@ -1691,7 +1763,7 @@ document.addEventListener('change', e => {
     else S.colors[k][f] = t.value;
     save(); renderMaster(); return;
   }
-  if (t.dataset.ld){ const x = S.staff[+t.dataset.ld], f = t.dataset.f; x[f] = t.type === 'checkbox' ? t.checked : t.value; save(); if (t.type !== 'checkbox' && f !== 'memo' && f !== 'empId') renderMaster(); return; }
+  if (t.dataset.ld){ const x = S.staff[+t.dataset.ld], f = t.dataset.f; x[f] = t.type === 'checkbox' ? t.checked : (['nightMax', 'junMax', 'maxConsec'].includes(f) ? (t.value === '' ? null : Math.max(0, +t.value || 0)) : t.value); save(); if (t.type !== 'checkbox' && f !== 'memo' && f !== 'empId') renderMaster(); return; }
   if (t.dataset.fte){ const q = S.staff[+t.dataset.fte].fte, f = t.dataset.f; q[f] = f === 'week' ? (+t.value || 0) : t.value; save(); renderFte(); return; }
   if (t.dataset.fh){ const hh = S.fte.hours[t.dataset.fh]; hh[t.dataset.f] = t.dataset.f === 'brk' ? (+t.value || 0) : t.value; S.fte.confirmed = false; save(); renderFte(); return; }
   if (t.dataset.fl){ S.fte.leave[t.dataset.fl] = t.value; save(); renderFte(); return; }
