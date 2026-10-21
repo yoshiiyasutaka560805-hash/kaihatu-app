@@ -327,7 +327,7 @@ function importText(text){
   }
   S.fte = defaultFte(); const seenF = new Set();
   for (const t of S.staff){ initExtras(t, S); initFte(t, S, seenF); }
-  S.reqLimit = 2; S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); S.extraHol = [];
+  S.reqLimit = 2; S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); S.extraHol = []; applyE3Patterns(S);
   syncHolidays(S);
   resetNeeds(S);
   return S;
@@ -374,7 +374,7 @@ function unavail(S, t, d){
 }
 const DEFAULT_COLORS = { '早': ['#9be8bd', '', '早番'], '日': ['#d4ecff', '', '日勤'], '遅': ['#ffbf7a', '', '遅番'], '遅E': ['#ff9f43', '', '遅番E'],
   '準夜勤': ['#dcbcff', '', '準夜勤'], '夜': ['#1f2a6b', '#ffffff', '夜勤'], '／': ['#c5d2ff', '', '夜勤明け'], '公': ['#f1f3f5', '#5c6370', '公休'],
-  '有休': ['#fff3a3', '', '有給休暇'], 'リ休': ['#fff3a3', '', 'リフレッシュ休暇'], '誕休': ['#fff3a3', '', '誕生日休暇'], '研修': ['#fff3a3', '', '研修'], '欠': ['#fff3a3', '', '欠勤'] };
+  '午前': ['#d4ecff', '', '午前（半日）'], '午後': ['#d4ecff', '', '午後（半日）'], '特休': ['#fff3a3', '', '特別休暇'], '有休': ['#fff3a3', '', '有給休暇'], 'リ休': ['#fff3a3', '', 'リフレッシュ休暇'], '誕休': ['#fff3a3', '', '誕生日休暇'], '研修': ['#fff3a3', '', '研修'], '欠': ['#fff3a3', '', '欠勤'] };
 function defaultColors(){
   const o = {}; for (const k in DEFAULT_COLORS) o[k] = { bg: DEFAULT_COLORS[k][0], fg: DEFAULT_COLORS[k][1], name: DEFAULT_COLORS[k][2], code: '' };
   return o;
@@ -771,13 +771,96 @@ const hmToH = x => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(x || '')); retu
 function defaultFte(){
   return { confirmed: false, weekHours: 40, method: 'cal', night: { s: '17:00', e: '09:00' },
     hours: { '早': { s: '07:00', e: '16:00', brk: 1 }, '日': { s: '08:30', e: '17:30', brk: 1 }, '遅': { s: '10:00', e: '19:00', brk: 1 },
-             '遅E': { s: '12:30', e: '21:30', brk: 1 }, '準夜勤': { s: '22:00', e: '07:00', brk: 1 }, '夜': { s: '16:00', e: '09:00', brk: 1.5 } },
+             '遅E': { s: '12:00', e: '21:00', brk: 1 }, '準夜勤': { s: '22:00', e: '07:00', brk: 1 }, '夜': { s: '16:00', e: '09:00', brk: 1.5 },
+             '午前': { s: '08:30', e: '12:30', brk: 0 }, '午後': { s: '13:30', e: '17:30', brk: 0 } },
     leave: { '有休': 'add', 'リ休': 'add', '誕休': 'add', '特休': 'add', '研修': 'work', '忌引': 'none', '産休': 'none', '欠': 'none' } };
+}
+// e3Shift「勤務種別パターンマスタ」（勤怠システムから取得した一覧）。休憩有＝休憩設定「有」。休憩時間の長さは一覧に無いため未設定（0）
+const E3_PATTERNS = `500|日勤|08:30|17:30|1
+501|早|07:00|16:00|1
+502|遅|10:00|19:00|1
+503|夜|16:00|09:00|1
+505|午前|08:30|12:30|0
+506|午後|13:30|17:30|0
+507|準夜勤|22:00|07:00|1
+508|遅E|12:00|21:00|1
+550|早厨|07:30|16:30|1
+551|午前厨|08:00|12:00|0
+552|午後厨|13:00|17:00|0
+553|9-16|09:00|16:00|1
+554|10-15|10:00|15:00|1
+555|10-14|10:00|14:00|0
+556|9-17|09:00|17:00|1
+557|8.5-14.5|08:30|14:30|1
+558|8.5-13|08:30|13:00|0
+559|8.5-15|08:30|15:00|1
+560|9-13|09:00|13:00|0
+561|10-19|10:00|19:00|1
+562|9.5-16.5|09:30|16:30|1
+563|A厨|08:00|17:00|1
+564|B厨|07:30|12:00|0
+565|C厨|09:00|13:00|0
+566|D厨|13:00|18:00|0
+567|E厨|08:30|14:00|0
+568|F厨|07:30|16:30|1
+569|G厨|09:00|18:00|1
+570|H厨|09:00|16:00|1
+571|I厨|16:00|18:00|0
+572|8.5-16.5|08:30|16:30|1
+573|9-15|09:00|15:00|1
+574|8.5-15.5|08:30|15:30|1
+575|9.5-16|09:30|16:00|1
+576|10-13|10:00|13:00|0
+577|J厨|07:30|12:30|0
+578|16-19|16:00|19:00|0
+579|9-12|09:00|12:00|0
+580|10-16|10:00|16:00|1
+581|8.5-12|08:30|12:00|0
+583|9-14|09:00|14:00|0
+584|8.5-16|08:30|16:00|1
+585|K厨|08:30|14:00|0
+586|L厨|12:30|18:00|0
+587|10-17.5|10:00|17:30|1
+588|9-18|09:00|18:00|1
+589|福寿会往診医|09:30|12:00|0
+590|宿直|17:30|08:30|0
+591|ひかりC往診医|14:00|16:00|0
+593|8.5-13.5|08:30|13:30|0
+594|9-15休無|09:00|15:00|0
+596|13-17|13:00|17:00|0
+597|7-16|07:00|16:00|0
+598|8.5-17.5|08:30|17:30|0
+599|8.5-17|08:30|17:00|1
+600|9-16.5|09:00|16:30|1
+601|8.5-12.5|08:30|12:30|0
+602|8.5-11.5|08:30|11:30|0
+603|11-20|11:00|20:00|0
+604|15-20|15:00|20:00|0
+605|9-14.5|09:00|14:30|0
+606|14.5-17.5|14:30|17:30|0
+607|15-19|15:00|19:00|0
+994|研修|08:30|17:30|0`.split('\n').map(l => { const a = l.split('|'); return { code: a[0], sym: a[1], s: a[2], e: a[3], brkFlag: a[4] === '1' }; });
+const E3_CODES = { '／': '504', 'リ休': '993', '公': '996', '有休': '997', '特休': '998', '誕休': '999' };
+// 未登録のパターンだけを補う（利用者が編集した値は上書きしない）
+function applyE3Patterns(S){
+  const F = S.fte; let added = 0;
+  for (const p of E3_PATTERNS){
+    const sym = p.sym.normalize('NFKC');
+    const core = S.shiftList.includes(sym);
+    if (!F.hours[sym]){ F.hours[sym] = { s: p.s, e: p.e, brk: core ? (F.hours[sym] || {}).brk || 0 : 0, brkFlag: p.brkFlag }; added++; }
+    else if (F.hours[sym].brkFlag === undefined) F.hours[sym].brkFlag = p.brkFlag;
+    if (!S.colors[sym]) S.colors[sym] = { bg: '', fg: '', name: sym, code: p.code };
+    else if (!S.colors[sym].code) S.colors[sym].code = p.code;
+  }
+  for (const k in E3_CODES) if (S.colors[k] && !S.colors[k].code) S.colors[k].code = E3_CODES[k];
+  F.e3 = true; return added;
 }
 // 旧初期値（私の仮置き）のままなら、勤怠データから読み取った時間に更新
 function migrateFteHours(S){
-  const o = { '遅': ['11:00', '20:00', 1], '準夜勤': ['16:00', '21:00', 0], '夜': ['16:30', '09:30', 2] }, n = defaultFte().hours;
+  const o = { '遅': ['11:00', '20:00', 1], '準夜勤': ['16:00', '21:00', 0], '夜': ['16:30', '09:30', 2], '遅E': ['12:30', '21:30', 1] }, n = defaultFte().hours;
   for (const k in o){ const h = S.fte.hours[k]; if (h && h.s === o[k][0] && h.e === o[k][1] && +h.brk === o[k][2]) S.fte.hours[k] = n[k]; }
+  for (const k of ['午前', '午後']) if (!S.fte.hours[k]) S.fte.hours[k] = n[k];
+  if (!S.fte.e3 && S.colors && S.shiftList) applyE3Patterns(S);
 }
 function initFte(t, S, seen){
   if (!S.fte) S.fte = defaultFte();
@@ -856,7 +939,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 
 const SRV = { on: false, ym: null, version: 0, dirty: false, busy: false, timer: null, conflict: false, readonly: false, user: null, writable: [] };
 function save(){ if (SRV.on){ if (typeof srvSchedule === 'function') srvSchedule(); return; } try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
-function load(src){ try { const j = src !== undefined ? src : localStorage.getItem(KEY); if (j){ S = JSON.parse(j); S.fte = S.fte || defaultFte(); migrateFteHours(S); { const sn = new Set(); S.staff.forEach(t => { initExtras(t, S); initFte(t, S, sn); }); } if (!S.minNeeds) S.minNeeds = JSON.parse(JSON.stringify(S.needs)); if (S.reqLimit === undefined) S.reqLimit = 2; if (!S.colors){ S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); } if (!S.extraHol) S.extraHol = []; } } catch (e) { S = null; } }
+function load(src){ try { const j = src !== undefined ? src : localStorage.getItem(KEY); if (j){ S = JSON.parse(j); if (!S.colors){ S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); } S.fte = S.fte || defaultFte(); migrateFteHours(S); { const sn = new Set(); S.staff.forEach(t => { initExtras(t, S); initFte(t, S, sn); }); } if (!S.minNeeds) S.minNeeds = JSON.parse(JSON.stringify(S.needs)); if (S.reqLimit === undefined) S.reqLimit = 2; if (!S.colors){ S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); } if (!S.extraHol) S.extraHol = []; } } catch (e) { S = null; } }
 
 function show(p){
   document.querySelectorAll('.pane').forEach(e => e.classList.toggle('on', e.id === 'p-' + p));
@@ -929,7 +1012,7 @@ function renderSheet(){
   }
   if (!shown.length) ih += '<p class="note">指摘はありません。</p>';
   $('#issues').innerHTML = ih;
-  { const lg = $('#legend'); if (lg) lg.innerHTML = '<b style="border:0;color:#666">記号：</b>' + S.shiftList.filter(k => S.colors[k]).map(k => { const c = S.colors[k], hh = S.fte && S.fte.hours[k]; return `<span><b style="background:${c.bg || '#fff'};color:${c.fg || '#222'}">${esc(k)}</b>${esc(c.name || '')}${hh && hh.s ? ' ' + esc(hh.s) + '〜' + esc(hh.e) : ''}</span>`; }).join(''); }
+  { const lg = $('#legend'); if (lg) lg.innerHTML = '<b style="border:0;color:#666">記号：</b>' + [...new Set(S.shiftList.concat(S.staff.flatMap(t => t.cells).filter(Boolean)))].filter(k => S.colors[k]).map(k => { const c = S.colors[k], hh = S.fte && S.fte.hours[k]; return `<span><b style="background:${c.bg || '#fff'};color:${c.fg || '#222'}">${esc(k)}</b>${esc(c.name || '')}${hh && hh.s ? ' ' + esc(hh.s) + '〜' + esc(hh.e) : ''}</span>`; }).join(''); }
   cvRender();
 }
 function unitSecId(unit){ const s = S.sections.find(x => x.title === unit && x.auto); return s ? s.id : -1; }
@@ -991,6 +1074,7 @@ function renderFte(){
   if (!S){ p.innerHTML = emptyState('fte'); return; }
   const F = S.fte, R = calcFte(S), f2 = x => (Math.round(x * 100) / 100).toFixed(2), f1 = x => (Math.round(x * 10) / 10).toFixed(1);
   let h = `<p class="note">e3Shift「常勤換算値出力」と同じ考え方：<b>常勤換算値＝勤務時間合計÷1週間基本時間</b>（「1固定」の職員は1.0）。有休・特休等は常勤のみ勤務時間に加算、非常勤は含みません。兼務・出張用シフトは扱いません（同じ職員が複数部署に載る場合は部署ごとに別行で集計）。<b>試算です。制度上の常勤換算は、指定権者の解釈・施設の取扱いで確認してください。</b></p>`;
+  { const nb = Object.keys(F.hours).filter(k => F.hours[k].brkFlag && !(+F.hours[k].brk)).length; if (nb) h += `<p class="bad">休憩設定が有のパターンのうち、休憩時間が未設定のものが<b>${nb}件</b>あります（その分、勤務時間が長めに計算されます）。「⑦ マスタ・台帳」で休憩(h)を入力してください。</p>`; }
   if (!F.confirmed) h += `<p class="bad"><b>勤務時間の初期値は仮置きです。</b>「⑦ マスタ・台帳」のシフト種別マスタで実際の時間に直してから <button id="bFteOk" class="pri">確認済みにする</button></p>`;
   h += `<h4>設定</h4><p>1週間基本時間（新規の既定）：<input type="number" id="fWeek" value="${F.weekHours}" style="width:60px">h　月の週数：<select id="fMethod"><option value="cal" ${F.method === 'cal' ? 'selected' : ''}>暦日数÷7（${f2(S.D / 7)}週）</option><option value="4" ${F.method === '4' ? 'selected' : ''}>4週固定</option></select>　夜勤時間帯：<input id="fNs" value="${F.night.s}" size="5">〜<input id="fNe" value="${F.night.e}" size="5">（例 17:00〜09:00）</p>
   <p class="note">各シフトの時間は「⑦ マスタ・台帳」のシフト種別マスタで設定します。</p>`;
@@ -1028,6 +1112,14 @@ function renderMaster(){
       <td><input data-sm="${esc(k)}" data-f="s" value="${hh ? hh.s : ''}" size="5" placeholder="08:30"></td><td><input data-sm="${esc(k)}" data-f="e" value="${hh ? hh.e : ''}" size="5" placeholder="17:30"></td><td><input type="number" step="0.25" data-sm="${esc(k)}" data-f="brk" value="${hh ? hh.brk : ''}" style="width:55px"></td><td>${sp ? (Math.round(sp.work * 100) / 100).toFixed(2) : '-'}</td><td><input data-sm="${esc(k)}" data-f="code" value="${esc(c.code || '')}" size="6"></td></tr>`;
   }
   h += `</table><p>シフトを追加：<input id="newSym" placeholder="記号（例 早B）" size="10"> <button id="bAddSym">追加</button></p>`;
+  const ex = Object.keys(S.fte.hours).filter(k => !S.shiftList.includes(k));
+  const noBrk = ex.filter(k => S.fte.hours[k].brkFlag && !(+S.fte.hours[k].brk)).length;
+  h += `<details><summary><b>時間表記・厨房などのパターン（${ex.length}件）</b>　勤怠システムの勤務種別パターンマスタから登録済み</summary>
+  <p class="note">勤怠システム（勤務種別パターンマスタ）の一覧です。「休憩有」はシステム上で休憩設定が有のパターンで、<b>休憩時間の長さは一覧に載っていない</b>ため、常勤換算の精度向上には、休憩(h)の入力が必要です（未設定：${noBrk}件）。<button id="bE3">未登録のパターンを補う</button></p>
+  <div style="overflow:auto;max-height:50vh"><table class="t"><tr><th>記号</th><th>コード</th><th>始業</th><th>終業</th><th>休憩有</th><th>休憩(h)</th><th>実働(h)</th></tr>`;
+  for (const k of ex){ const hh = S.fte.hours[k], c = S.colors[k] || {}, sp = shiftSpan(k, S);
+    h += `<tr><td><b>${esc(k)}</b></td><td>${esc(c.code || '')}</td><td>${esc(hh.s)}</td><td>${esc(hh.e)}</td><td>${hh.brkFlag ? '有' : ''}</td><td><input type="number" step="0.25" data-sm="${esc(k)}" data-f="brk" value="${hh.brk}" style="width:55px"></td><td>${sp ? (Math.round(sp.work * 100) / 100).toFixed(2) : '-'}</td></tr>`; }
+  h += '</table></div></details>';
   h += `<h4>職員台帳</h4><p class="note">採用日・退職日・休職期間は、該当する日を自動で勤務対象外にします（空欄は制限なし）。「入れるシフト」は自動作成が参照します。休職・退職の期間に勤務が入っていると、エラーになります。</p>
   <div style="overflow:auto;max-height:70vh"><table class="t"><tr><th>部署</th><th>職員</th><th>状況（今月）</th><th>採用日</th><th>退職日</th><th>休職開始</th><th>休職終了</th><th>祝日出勤可</th><th>早</th><th>日</th><th>遅</th><th>遅E</th><th>準夜</th><th>夜</th><th>備考</th></tr>`;
   for (const t of S.staff){
@@ -1332,7 +1424,7 @@ $('#bSample').onclick = () => {
     minNeeds: {}, reqLimit: 2,
     needs: { '2階/AB': { '早': nd(2, 1), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(1, 1) }, '2階/CD': { '早': nd(2, 1), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(1, 1) }, '2階/*': { '遅E': nd(1, 1), '準夜勤': nd(1, 1) } } };
   S.minNeeds = JSON.parse(JSON.stringify(S.needs));
-  S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); S.extraHol = []; syncHolidays(S);
+  S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); S.extraHol = []; syncHolidays(S); S.fte = defaultFte(); applyE3Patterns(S);
   { const sn = new Set(); S.staff.forEach(t => { initExtras(t, S); initFte(t, S, sn); }); }
   S.staff.forEach(t => { t.req = t.cells.map(c => c); t.reqApplied = t.req.map(r => !!r); });
   generateAll(S, 'rebuild'); save(); curSec = 'all'; show('sheet');
@@ -1381,7 +1473,7 @@ $('#bView').onclick = () => {
 $('#bPrint').onclick = () => { show('sheet'); window.print(); };
 
 const pal = $('#pal'); let palTarget = null;
-function buildPalette(){ pal.innerHTML = ((S && S.shiftList) || PALETTE).concat('').map(p => `<button data-v="${p}">${p || '消去'}</button>`).join(''); }
+function buildPalette(){ const used = new Set(); if (S) S.staff.forEach(t => t.cells.forEach(c => { if (c) used.add(c); })); pal.innerHTML = [...new Set(((S && S.shiftList) || PALETTE).concat([...used]))].concat('').map(p => `<button data-v="${p}">${p || '消去'}</button>`).join(''); }
 buildPalette();
 pal.onclick = e => {
   const b = e.target.closest('button'); if (!b || !palTarget) return;
@@ -1463,6 +1555,7 @@ document.addEventListener('click', e => {
     S.extraHol.push({ date: d, name: n || '法人休日' }); syncHolidays(S); save(); renderMaster(); return;
   }
   if (e.target.dataset && e.target.dataset.delhol !== undefined && S){ S.extraHol.splice(+e.target.dataset.delhol, 1); syncHolidays(S); save(); renderMaster(); return; }
+  if (e.target.id === 'bE3' && S){ const n = applyE3Patterns(S); save(); renderMaster(); setStatus(`勤務種別パターンを${n}件登録しました`); return; }
   if (e.target.id === 'bAddSym' && S){
     const k = $('#newSym').value.trim();
     if (!k || S.shiftList.includes(k)) return alert('未登録の記号を入力してください');
