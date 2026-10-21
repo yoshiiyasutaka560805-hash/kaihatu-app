@@ -841,6 +841,18 @@ const E3_PATTERNS = `500|日勤|08:30|17:30|1
 607|15-19|15:00|19:00|0
 994|研修|08:30|17:30|0`.split('\n').map(l => { const a = l.split('|'); return { code: a[0], sym: a[1], s: a[2], e: a[3], brkFlag: a[4] === '1' }; });
 const E3_CODES = { '／': '504', 'リ休': '993', '公': '996', '有休': '997', '特休': '998', '誕休': '999' };
+// 労働基準法34条：労働時間が6時間を超えれば45分、8時間を超えれば1時間以上の休憩（拘束時間から必要最小限を算出）
+function spanOf(h){ const a = hmToH(h.s), b0 = hmToH(h.e); if (a == null || b0 == null) return 0; return (b0 <= a ? b0 + 24 : b0) - a; }
+function legalBreak(span){ return span > 8 ? 1 : span > 6 ? 0.75 : 0; }
+// 休憩が未設定（0）のパターンに、法定の休憩を設定（宿直は常勤換算の対象外）
+function applyLegalBreaks(S){
+  let n = 0;
+  for (const k of Object.keys(S.fte.hours)){
+    const h = S.fte.hours[k]; if (k === '宿直' || +h.brk) continue;
+    const b = legalBreak(spanOf(h)); if (b){ h.brk = b; n++; }
+  }
+  S.fte.legalBrk = true; return n;
+}
 // 未登録のパターンだけを補う（利用者が編集した値は上書きしない）
 function applyE3Patterns(S){
   const F = S.fte; let added = 0;
@@ -853,6 +865,8 @@ function applyE3Patterns(S){
     else if (!S.colors[sym].code) S.colors[sym].code = p.code;
   }
   for (const k in E3_CODES) if (S.colors[k] && !S.colors[k].code) S.colors[k].code = E3_CODES[k];
+  if (!F.exclude) F.exclude = ['宿直'];
+  applyLegalBreaks(S);
   F.e3 = true; return added;
 }
 // 旧初期値（私の仮置き）のままなら、勤怠データから読み取った時間に更新
@@ -861,6 +875,7 @@ function migrateFteHours(S){
   for (const k in o){ const h = S.fte.hours[k]; if (h && h.s === o[k][0] && h.e === o[k][1] && +h.brk === o[k][2]) S.fte.hours[k] = n[k]; }
   for (const k of ['午前', '午後']) if (!S.fte.hours[k]) S.fte.hours[k] = n[k];
   if (!S.fte.e3 && S.colors && S.shiftList) applyE3Patterns(S);
+  else if (!S.fte.legalBrk && S.fte.e3){ if (!S.fte.exclude) S.fte.exclude = ['宿直']; applyLegalBreaks(S); }
 }
 function initFte(t, S, seen){
   if (!S.fte) S.fte = defaultFte();
@@ -896,6 +911,7 @@ function calcFte(S){
     for (const v of t.cells){
       const k = cls(v); if (k === 'blank' || k === 'off' || k === 'ake') continue;
       if (k === 'leave'){ const m = F.leave[v] || 'none'; if (m === 'work' || (m === 'add' && q.type === '常勤')) hours += daily; continue; }
+      if ((F.exclude || []).includes(v)) continue;
       const sp = shiftSpan(v, S);
       if (sp){ hours += sp.work; night += nightOverlap(sp, S); } else unknown++;
     }
@@ -1074,7 +1090,7 @@ function renderFte(){
   if (!S){ p.innerHTML = emptyState('fte'); return; }
   const F = S.fte, R = calcFte(S), f2 = x => (Math.round(x * 100) / 100).toFixed(2), f1 = x => (Math.round(x * 10) / 10).toFixed(1);
   let h = `<p class="note">e3Shift「常勤換算値出力」と同じ考え方：<b>常勤換算値＝勤務時間合計÷1週間基本時間</b>（「1固定」の職員は1.0）。有休・特休等は常勤のみ勤務時間に加算、非常勤は含みません。兼務・出張用シフトは扱いません（同じ職員が複数部署に載る場合は部署ごとに別行で集計）。<b>試算です。制度上の常勤換算は、指定権者の解釈・施設の取扱いで確認してください。</b></p>`;
-  { const nb = Object.keys(F.hours).filter(k => F.hours[k].brkFlag && !(+F.hours[k].brk)).length; if (nb) h += `<p class="bad">休憩設定が有のパターンのうち、休憩時間が未設定のものが<b>${nb}件</b>あります（その分、勤務時間が長めに計算されます）。「⑦ マスタ・台帳」で休憩(h)を入力してください。</p>`; }
+  { const nb = Object.keys(F.hours).filter(k => F.hours[k].brkFlag && !(+F.hours[k].brk) && spanOf(F.hours[k]) > 6).length; if (nb) h += `<p class="bad">休憩設定が有のパターンのうち、休憩時間が未設定のものが<b>${nb}件</b>あります（その分、勤務時間が長めに計算されます）。「⑦ マスタ・台帳」で休憩(h)を入力してください。</p>`; }
   if (!F.confirmed) h += `<p class="bad"><b>勤務時間の初期値は仮置きです。</b>「⑦ マスタ・台帳」のシフト種別マスタで実際の時間に直してから <button id="bFteOk" class="pri">確認済みにする</button></p>`;
   h += `<h4>設定</h4><p>1週間基本時間（新規の既定）：<input type="number" id="fWeek" value="${F.weekHours}" style="width:60px">h　月の週数：<select id="fMethod"><option value="cal" ${F.method === 'cal' ? 'selected' : ''}>暦日数÷7（${f2(S.D / 7)}週）</option><option value="4" ${F.method === '4' ? 'selected' : ''}>4週固定</option></select>　夜勤時間帯：<input id="fNs" value="${F.night.s}" size="5">〜<input id="fNe" value="${F.night.e}" size="5">（例 17:00〜09:00）</p>
   <p class="note">各シフトの時間は「⑦ マスタ・台帳」のシフト種別マスタで設定します。</p>`;
@@ -1113,9 +1129,10 @@ function renderMaster(){
   }
   h += `</table><p>シフトを追加：<input id="newSym" placeholder="記号（例 早B）" size="10"> <button id="bAddSym">追加</button></p>`;
   const ex = Object.keys(S.fte.hours).filter(k => !S.shiftList.includes(k));
-  const noBrk = ex.filter(k => S.fte.hours[k].brkFlag && !(+S.fte.hours[k].brk)).length;
+  const noBrk = ex.filter(k => S.fte.hours[k].brkFlag && !(+S.fte.hours[k].brk) && spanOf(S.fte.hours[k]) > 6).length;
+  const noFlag = ex.filter(k => !S.fte.hours[k].brkFlag && spanOf(S.fte.hours[k]) > 6 && k !== '宿直');
   h += `<details><summary><b>時間表記・厨房などのパターン（${ex.length}件）</b>　勤怠システムの勤務種別パターンマスタから登録済み</summary>
-  <p class="note">勤怠システム（勤務種別パターンマスタ）の一覧です。「休憩有」はシステム上で休憩設定が有のパターンで、<b>休憩時間の長さは一覧に載っていない</b>ため、常勤換算の精度向上には、休憩(h)の入力が必要です（未設定：${noBrk}件）。<button id="bE3">未登録のパターンを補う</button></p>
+  <p class="note">勤怠システム（勤務種別パターンマスタ）の一覧です。休憩時間は一覧に載っていないため、<b>労基法34条（6時間超で45分、8時間超で1時間）の最小値</b>を自動設定しています（変更可）。夜勤（休憩1.5h）など、設定済みの値は変えません。宿直は常勤換算に含めません。未設定（6時間超）：${noBrk}件　<button id="bE3">未登録のパターンを補う・法定休憩を設定</button></p>${noFlag.length ? `<p class="bad">システム上は休憩設定が「無」で、6時間を超えるパターン：<b>${noFlag.map(esc).join('、')}</b>（法定休憩を仮に設定しています。実際の運用をご確認ください）</p>` : ''}
   <div style="overflow:auto;max-height:50vh"><table class="t"><tr><th>記号</th><th>コード</th><th>始業</th><th>終業</th><th>休憩有</th><th>休憩(h)</th><th>実働(h)</th></tr>`;
   for (const k of ex){ const hh = S.fte.hours[k], c = S.colors[k] || {}, sp = shiftSpan(k, S);
     h += `<tr><td><b>${esc(k)}</b></td><td>${esc(c.code || '')}</td><td>${esc(hh.s)}</td><td>${esc(hh.e)}</td><td>${hh.brkFlag ? '有' : ''}</td><td><input type="number" step="0.25" data-sm="${esc(k)}" data-f="brk" value="${hh.brk}" style="width:55px"></td><td>${sp ? (Math.round(sp.work * 100) / 100).toFixed(2) : '-'}</td></tr>`; }
@@ -1555,7 +1572,7 @@ document.addEventListener('click', e => {
     S.extraHol.push({ date: d, name: n || '法人休日' }); syncHolidays(S); save(); renderMaster(); return;
   }
   if (e.target.dataset && e.target.dataset.delhol !== undefined && S){ S.extraHol.splice(+e.target.dataset.delhol, 1); syncHolidays(S); save(); renderMaster(); return; }
-  if (e.target.id === 'bE3' && S){ const n = applyE3Patterns(S); save(); renderMaster(); setStatus(`勤務種別パターンを${n}件登録しました`); return; }
+  if (e.target.id === 'bE3' && S){ const n = applyE3Patterns(S) + applyLegalBreaks(S); save(); renderMaster(); setStatus(`勤務種別パターンを${n}件登録しました`); return; }
   if (e.target.id === 'bAddSym' && S){
     const k = $('#newSym').value.trim();
     if (!k || S.shiftList.includes(k)) return alert('未登録の記号を入力してください');
