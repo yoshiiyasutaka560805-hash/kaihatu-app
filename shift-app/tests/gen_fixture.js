@@ -25,7 +25,7 @@ function build(opt){
       if (rnd() < 0.04) n = pick(romaji) + ' ' + pick(romaji).toLowerCase() + R(99);
       else if (rnd() < 0.06) n = pick(S1) + pick(S2) + '　' + pick(G1) + pick(G2);       // 全角空白
       else if (rnd() < 0.03) n = ' ' + pick(S1) + pick(S2) + ' ' + pick(G1) + ' ';          // 前後空白＋半角
-      else if (rnd() < 0.05) n = pick(S1) + pick(S2);                                        // 姓のみ（見本の「ターヤ―」型）
+      else if (rnd() < 0.05) n = pick(S1) + pick(S2);                                        // 姓のみ（姓のみの表記）
       else n = pick(S1) + pick(S2) + ' ' + pick(G1) + pick(G2);
       if (!used.has(n.trim())){ used.add(n.trim()); return n; }
     }
