@@ -769,7 +769,7 @@ function generateAll(S, mode){
 // ---- 常勤換算（e3Shift「常勤換算値出力」の考え方：常勤換算値＝勤務時間合計÷1週間基本時間）----
 const hmToH = x => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(x || '')); return m ? +m[1] + (+m[2]) / 60 : null; };
 function defaultFte(){
-  return { confirmed: false, weekHours: 40, method: 'cal', night: { s: '17:00', e: '09:00' },
+  return { confirmed: true, weekHours: 40, method: 'cal', night: { s: '17:00', e: '09:00' },
     hours: { '早': { s: '07:00', e: '16:00', brk: 1 }, '日': { s: '08:30', e: '17:30', brk: 1 }, '遅': { s: '10:00', e: '19:00', brk: 1 },
              '遅E': { s: '12:00', e: '21:00', brk: 1 }, '準夜勤': { s: '22:00', e: '07:00', brk: 1 }, '夜': { s: '16:00', e: '09:00', brk: 1.5 },
              '午前': { s: '08:30', e: '12:30', brk: 0 }, '午後': { s: '13:30', e: '17:30', brk: 0 } },
@@ -891,15 +891,17 @@ function shiftSpan(sym, S){
   if (h){
     const s = hmToH(h.s), e0 = hmToH(h.e); if (s == null || e0 == null) return null;
     const e = e0 <= s ? e0 + 24 : e0;
-    return { s, e, work: Math.max(0, e - s - (+h.brk || 0)) };
+    return { s, e, brk: +h.brk || 0, work: Math.max(0, e - s - (+h.brk || 0)) };
   }
   const m = /^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/.exec(sym);
-  return m ? { s: +m[1], e: +m[2], work: +m[2] - +m[1] } : null;
+  return m ? { s: +m[1], e: +m[2], brk: 0, work: +m[2] - +m[1] } : null;
 }
 function nightOverlap(sp, S){
   const ns = hmToH(S.fte.night.s), ne0 = hmToH(S.fte.night.e); if (ns == null || ne0 == null) return 0;
   const ne = ne0 <= ns ? ne0 + 24 : ne0; let o = 0;
   for (const k of [-1, 0, 1]) o += Math.max(0, Math.min(sp.e, ne + 24 * k) - Math.max(sp.s, ns + 24 * k));
+  // 日をまたぐ勤務（夜・準夜勤）の休憩は夜勤時間帯の中で取るものとして、延べ夜勤時間から除く
+  if (sp.e > 24 && sp.brk) o = Math.max(0, o - Math.min(sp.brk, o));
   return o;
 }
 function calcFte(S){
