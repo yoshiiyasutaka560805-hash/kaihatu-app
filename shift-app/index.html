@@ -82,7 +82,12 @@ table.g td.nm,table.g th.nm{position:sticky;left:0;background:var(--surface);tex
 table.g th.nm{background:var(--hd);z-index:3}
 table.g td.sum{background:#f4f9ff;min-width:34px;color:var(--muted)}
 th.we-6{color:#1259b8}th.we-0,th.hol{color:#c5221f}
-td.c{cursor:pointer;user-select:none}
+td.c{cursor:pointer;user-select:none;font-weight:700;font-size:13px}
+td.c.off,td.c.ake{font-weight:400}
+td.c.wk0,th.wk0{border-left:2px solid #8793a8}
+#legend{display:flex;flex-wrap:wrap;gap:6px 10px;margin:0 0 10px;font-size:12px}
+#legend span{display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:2px 10px 2px 3px}
+#legend b{display:inline-block;min-width:30px;text-align:center;border-radius:999px;padding:1px 6px;border:1px solid #0002}
 td.c:hover{filter:brightness(.94)}
 td.c.pin{box-shadow:inset 0 0 0 2px #6a1b9a}
 td.c.E{outline:2px solid var(--err);outline-offset:-2px}
@@ -201,6 +206,7 @@ table.t input[type=number]{width:56px}
     表示：<select id="secSel"></select>
     <span class="note">セルをクリックで記号選択／Shift+クリックで「固定」（紫枠。自動作成で動かさない＝希望休など）／赤枠=エラー・橙枠=注意</span>
   </div>
+  <div id="legend"></div>
   <div class="layout"><div class="gridwrap" id="grid"></div><div class="side" id="issues"></div></div>
 </section>
 <section id="p-req" class="pane"></section>
@@ -366,7 +372,7 @@ function unavail(S, t, d){
   if (t.leaveStart && k >= t.leaveStart && (!t.leaveEnd || k <= t.leaveEnd)) return true;
   return false;
 }
-const DEFAULT_COLORS = { '早': ['#b7f0d4', '', '早番'], '日': ['#e6f5ff', '', '日勤'], '遅': ['#ffc58a', '', '遅番'], '遅E': ['#ff9f43', '', '遅番E'],
+const DEFAULT_COLORS = { '早': ['#9be8bd', '', '早番'], '日': ['#d4ecff', '', '日勤'], '遅': ['#ffbf7a', '', '遅番'], '遅E': ['#ff9f43', '', '遅番E'],
   '準夜勤': ['#dcbcff', '', '準夜勤'], '夜': ['#1f2a6b', '#ffffff', '夜勤'], '／': ['#c5d2ff', '', '夜勤明け'], '公': ['#f1f3f5', '#5c6370', '公休'],
   '有休': ['#fff3a3', '', '有給休暇'], 'リ休': ['#fff3a3', '', 'リフレッシュ休暇'], '誕休': ['#fff3a3', '', '誕生日休暇'], '研修': ['#fff3a3', '', '研修'], '欠': ['#fff3a3', '', '欠勤'] };
 function defaultColors(){
@@ -764,9 +770,14 @@ function generateAll(S, mode){
 const hmToH = x => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(x || '')); return m ? +m[1] + (+m[2]) / 60 : null; };
 function defaultFte(){
   return { confirmed: false, weekHours: 40, method: 'cal', night: { s: '17:00', e: '09:00' },
-    hours: { '早': { s: '07:00', e: '16:00', brk: 1 }, '日': { s: '08:30', e: '17:30', brk: 1 }, '遅': { s: '11:00', e: '20:00', brk: 1 },
-             '遅E': { s: '12:30', e: '21:30', brk: 1 }, '準夜勤': { s: '16:00', e: '21:00', brk: 0 }, '夜': { s: '16:30', e: '09:30', brk: 2 } },
+    hours: { '早': { s: '07:00', e: '16:00', brk: 1 }, '日': { s: '08:30', e: '17:30', brk: 1 }, '遅': { s: '10:00', e: '19:00', brk: 1 },
+             '遅E': { s: '12:30', e: '21:30', brk: 1 }, '準夜勤': { s: '22:00', e: '07:00', brk: 1 }, '夜': { s: '16:00', e: '09:00', brk: 1.5 } },
     leave: { '有休': 'add', 'リ休': 'add', '誕休': 'add', '特休': 'add', '研修': 'work', '忌引': 'none', '産休': 'none', '欠': 'none' } };
+}
+// 旧初期値（私の仮置き）のままなら、勤怠データから読み取った時間に更新
+function migrateFteHours(S){
+  const o = { '遅': ['11:00', '20:00', 1], '準夜勤': ['16:00', '21:00', 0], '夜': ['16:30', '09:30', 2] }, n = defaultFte().hours;
+  for (const k in o){ const h = S.fte.hours[k]; if (h && h.s === o[k][0] && h.e === o[k][1] && +h.brk === o[k][2]) S.fte.hours[k] = n[k]; }
 }
 function initFte(t, S, seen){
   if (!S.fte) S.fte = defaultFte();
@@ -845,7 +856,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 
 const SRV = { on: false, ym: null, version: 0, dirty: false, busy: false, timer: null, conflict: false, readonly: false, user: null, writable: [] };
 function save(){ if (SRV.on){ if (typeof srvSchedule === 'function') srvSchedule(); return; } try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
-function load(src){ try { const j = src !== undefined ? src : localStorage.getItem(KEY); if (j){ S = JSON.parse(j); S.fte = S.fte || defaultFte(); { const sn = new Set(); S.staff.forEach(t => { initExtras(t, S); initFte(t, S, sn); }); } if (!S.minNeeds) S.minNeeds = JSON.parse(JSON.stringify(S.needs)); if (S.reqLimit === undefined) S.reqLimit = 2; if (!S.colors){ S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); } if (!S.extraHol) S.extraHol = []; } } catch (e) { S = null; } }
+function load(src){ try { const j = src !== undefined ? src : localStorage.getItem(KEY); if (j){ S = JSON.parse(j); S.fte = S.fte || defaultFte(); migrateFteHours(S); { const sn = new Set(); S.staff.forEach(t => { initExtras(t, S); initFte(t, S, sn); }); } if (!S.minNeeds) S.minNeeds = JSON.parse(JSON.stringify(S.needs)); if (S.reqLimit === undefined) S.reqLimit = 2; if (!S.colors){ S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); } if (!S.extraHol) S.extraHol = []; } } catch (e) { S = null; } }
 
 function show(p){
   document.querySelectorAll('.pane').forEach(e => e.classList.toggle('on', e.id === 'p-' + p));
@@ -889,7 +900,7 @@ function renderSheet(){
   const bad = new Map(); issues.forEach(x => { if (x.s >= 0 && x.d >= 0){ const k = x.s + ':' + x.d; if (!bad.has(k) || x.sev === 'E') bad.set(k, x.sev); } });
   const DOW = '日月火水木金土';
   let h = '<table class="g"><thead><tr><th class="nm">氏名</th>';
-  for (let d = 0; d < S.D; d++) h += `<th class="we-${di.wd[d]} ${S.holidays.includes(d + 1) ? 'hol' : ''}">${d + 1}<br>${DOW[di.wd[d]]}</th>`;
+  for (let d = 0; d < S.D; d++) h += `<th class="we-${di.wd[d]} ${di.wd[d] === 0 ? 'wk0' : ''} ${S.holidays.includes(d + 1) ? 'hol' : ''}">${d + 1}<br>${DOW[di.wd[d]]}</th>`;
   h += '<th>公</th><th>有</th><th>夜</th></tr></thead><tbody>';
   for (const sec of S.sections){
     if (curSec !== 'all' && +curSec !== sec.id) continue;
@@ -901,7 +912,7 @@ function renderSheet(){
       h += `<tr><td class="nm">${esc(t.koyo)}　${esc(t.name)}${t.auto || t.part ? '' : ' <span class="note">手入力</span>'}</td>`;
       for (let d = 0; d < S.D; d++){
         const val = t.cells[d], k = t.id + ':' + d;
-        h += `<td class="c ${cellClass(val)} ${t.pins[d] ? 'pin' : ''} ${bad.get(k) || ''} ${d < t.from || unavail(S, t, d) ? 'lock' : ''}"${styleOf(val)} data-s="${t.id}" data-d="${d}" id="c${t.id}_${d}">${esc(val)}</td>`;
+        h += `<td class="c ${cellClass(val)} ${di.wd[d] === 0 ? 'wk0' : ''} ${t.pins[d] ? 'pin' : ''} ${bad.get(k) || ''} ${d < t.from || unavail(S, t, d) ? 'lock' : ''}"${styleOf(val)} data-s="${t.id}" data-d="${d}" id="c${t.id}_${d}">${esc(val)}</td>`;
       }
       const k = s => t.cells.filter(c => c === s).length;
       const rb = issues.some(x => x.s === t.id && x.d === -1);
@@ -918,6 +929,7 @@ function renderSheet(){
   }
   if (!shown.length) ih += '<p class="note">指摘はありません。</p>';
   $('#issues').innerHTML = ih;
+  { const lg = $('#legend'); if (lg) lg.innerHTML = '<b style="border:0;color:#666">記号：</b>' + S.shiftList.filter(k => S.colors[k]).map(k => { const c = S.colors[k], hh = S.fte && S.fte.hours[k]; return `<span><b style="background:${c.bg || '#fff'};color:${c.fg || '#222'}">${esc(k)}</b>${esc(c.name || '')}${hh && hh.s ? ' ' + esc(hh.s) + '〜' + esc(hh.e) : ''}</span>`; }).join(''); }
   cvRender();
 }
 function unitSecId(unit){ const s = S.sections.find(x => x.title === unit && x.auto); return s ? s.id : -1; }
