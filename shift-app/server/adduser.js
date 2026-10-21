@@ -7,6 +7,8 @@
 //        初期パスワードはランダム生成し標準出力にのみ表示（--out 指定時は 0600 の新規ファイルにのみ書き、標準出力には出さない）
 //   node server/adduser.js --passwd <職員ID> [新パスワード]
 //   node server/adduser.js --disable <職員ID> / --enable <職員ID>
+//   node server/adduser.js --grant finalize <職員ID> / --revoke finalize <職員ID>
+//        「確定（ロック）・確定解除」の権限フラグ（canFinalize）を付け外し。admin は常に可能。
 //   node server/adduser.js --list
 // 共通オプション: --no-change-required  初期/再発行パスワードの「初回ログイン時の変更必須」を付けない（自動化・テスト用）
 // role: admin(システム管理者) / manager1(管理者Ⅰ) / manager2(管理者Ⅱ) / staff(一般職員)
@@ -100,7 +102,7 @@ function parseCsv(text) {
   if (a[0] === '--list') {
     const rows = Object.entries(users);
     if (!rows.length) console.log('(ユーザーなし)');
-    for (const [id, u] of rows) console.log(`${id}\t${u.name}\t${u.role}\t${(u.groups || []).join(',')}${u.disabled ? '\t[無効]' : ''}${u.mustChange ? '\t[要PW変更]' : ''}`);
+    for (const [id, u] of rows) console.log(`${id}\t${u.name}\t${u.role}\t${(u.groups || []).join(',')}${u.canFinalize ? '\t[確定権限]' : ''}${u.disabled ? '\t[無効]' : ''}${u.mustChange ? '\t[要PW変更]' : ''}`);
     return;
   }
   if (a[0] === '--passwd') {
@@ -111,6 +113,13 @@ function parseCsv(text) {
     saveUsers(users);
     console.log(a[2] ? 'パスワードを更新しました（既存のログインは失効します）。' : `新しいパスワード（この画面に一度だけ表示）: ${pw}`);
     return;
+  }
+  if (a[0] === '--grant' || a[0] === '--revoke') {
+    const flag = a[1], id = a[2];
+    if (flag !== 'finalize') die('付け外しできる権限は finalize（確定）のみです');
+    if (!id || !users[id]) die('職員IDが見つかりません');
+    if (a[0] === '--grant') users[id].canFinalize = true; else delete users[id].canFinalize;
+    saveUsers(users); console.log(`${id}: 確定権限を${a[0] === '--grant' ? '付与' : '取り消'}しました` + (users[id].role === 'admin' ? '（admin は常に確定できます）' : '')); return;
   }
   if (a[0] === '--disable' || a[0] === '--enable') {
     const id = a[1]; if (!id || !users[id]) die('職員IDが見つかりません');
