@@ -247,7 +247,7 @@ document.addEventListener('click', e => { const g = e.target.closest && e.target
 <script>
 //#ENGINE-START
 'use strict';
-const SHIFTS = ['早','日','遅','遅E','夜','準夜勤'];
+const SHIFTS = ['早','早E','日','遅','遅E','夜','準夜勤'];
 const NIGHT_FIX = ['／'];
 const LEAVE = new Set(['有休','リ休','誕休','忌引','産休','欠','研修','特休','公(忌引)']);
 const PALETTE = ['早','日','遅','遅E','夜','／','準夜勤','公','有休','リ休','誕休','研修','欠',''];
@@ -386,7 +386,7 @@ function unavail(S, t, d){
   if (t.leaveStart && k >= t.leaveStart && (!t.leaveEnd || k <= t.leaveEnd)) return true;
   return false;
 }
-const DEFAULT_COLORS = { '早': ['#9be8bd', '', '早番'], '日': ['#d4ecff', '', '日勤'], '遅': ['#ffbf7a', '', '遅番'], '遅E': ['#ff9f43', '', '遅番E'],
+const DEFAULT_COLORS = { '早': ['#9be8bd', '', '早番'], '早E': ['#5fd4a0', '', '早番E'], '日': ['#d4ecff', '', '日勤'], '遅': ['#ffbf7a', '', '遅番'], '遅E': ['#ff9f43', '', '遅番E'],
   '準夜勤': ['#dcbcff', '', '準夜勤'], '夜': ['#1f2a6b', '#ffffff', '夜勤'], '／': ['#c5d2ff', '', '夜勤明け'], '公': ['#f1f3f5', '#5c6370', '公休'],
   '午前': ['#d4ecff', '', '午前（半日）'], '午後': ['#d4ecff', '', '午後（半日）'], '特休': ['#fff3a3', '', '特別休暇'], '有休': ['#fff3a3', '', '有給休暇'], 'リ休': ['#fff3a3', '', 'リフレッシュ休暇'], '誕休': ['#fff3a3', '', '誕生日休暇'], '研修': ['#fff3a3', '', '研修'], '欠': ['#fff3a3', '', '欠勤'] };
 function defaultColors(){
@@ -417,6 +417,7 @@ function initExtras(t, S){
   if (t.hireDate === undefined){ t.hireDate = ''; t.retireDate = ''; t.leaveStart = ''; t.leaveEnd = ''; t.memo = ''; }
   if (t.empId === undefined) t.empId = '';
   if (t.holidayOk === undefined) t.holidayOk = true;
+  if (t.canEE === undefined) t.canEE = false;
   if (t.canEarly === undefined){ t.canEarly = true; t.canDay = true; t.canLate = true; }
   if (t.nightFixed === undefined) t.nightFixed = null;
   if (t.nightMax === undefined){ t.nightMax = null; t.junMax = null; t.maxConsec = null; }
@@ -477,7 +478,7 @@ function dayInfo(S){
   return { wd, cl };
 }
 // 自動作成の単位＝フロア（部署）。AB／CDなどのラベルごとに人数を持ち、遅E・準夜勤はフロア共通
-const FLOOR_SHIFTS = ['遅E','準夜勤'];
+const FLOOR_SHIFTS = ['早E','遅E','準夜勤'];
 function unitsOf(S){
   const map = new Map();
   for (const t of S.staff) if (t.auto){
@@ -542,18 +543,18 @@ function coverList(U, S){
   for (const sh of SHIFTS) for (const sc of scopesOf(U, sh)){
     const nd = (S.needs[sc.key] || {})[sh] || {}, mnd = (((S.minNeeds || {})[sc.key] || {})[sh]) || {}, tb = {};
     for (const k of ['wk', 'we']){ const need = nd[k] || 0; tb[k] = [need, Math.min(need, mnd[k] ?? need)]; }
-    list.push({ sh, sc, tb, nm: (sc.label ? sc.label + ' ' : '') + sh });
+    list.push({ sh, sc, tb, nm: (sc.label ? sc.label + ' ' : '') + sh, eAsE: sh === '早' && !!S.earlyEAsEarly });
   }
   return list;
 }
 // 1日ぶんの人数チェック
 function coverCheck(list, di, d, add){
-  for (const { sh, sc, tb, nm } of list){
+  for (const { sh, sc, tb, nm, eAsE } of list){
     const [need, mn] = tb[di.cl[d]];
-    let n = 0; for (const t of sc.members) if (t.cells[d] === sh) n++;
+    let n = 0; for (const t of sc.members) if (t.cells[d] === sh || (eAsE && t.cells[d] === '早E')) n++;
     if (n < mn) add('E', null, d, `${nm}が${n}人（最低${mn}人）`);
     else if (n < need) add('W', null, d, `${nm}が${n}人（目標${need}人）`, 5 * (need - n));
-    else if (n > need && sh !== '日') add('W', null, d, `${nm}が${n}人（必要${need}人）で多い`);
+    else if (n > need && sh !== '日' && !(sh === '早E' && need === 0)) add('W', null, d, `${nm}が${n}人（必要${need}人）で多い`);
   }
 }
 // 夜勤・準夜勤の回数のばらつき（出られる日が少ない人・個別に上限や回数を指定した人は除く）。差が1回以内なら0
@@ -606,7 +607,7 @@ function validateAll(S){
 // 自動作成
 function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
-const allowSym = (t, v) => v === '遅E' ? !!t.canE : v === '早' ? t.canEarly !== false : v === '日' ? t.canDay !== false : v === '遅' ? t.canLate !== false : true;
+const allowSym = (t, v) => v === '早E' ? !!t.canEE : v === '遅E' ? !!t.canE : v === '早' ? t.canEarly !== false : v === '日' ? t.canDay !== false : v === '遅' ? t.canLate !== false : true;
 function genUnit(U, S, di, mode, seed){
   const rnd = mulberry32(seed), D = S.D, max = S.maxConsec;
   const st = U.staff, n = st.length;
@@ -624,7 +625,7 @@ function genUnit(U, S, di, mode, seed){
   for (let i = 0; i < n; i++) for (let d = 0; d < D; d++) if (!lock[i][d]) st[i].cells[d] = '';
   const c = st.map(t => t.cells);
   const free = (i, d) => !lock[i][d] && c[i][d] === '';
-  const haveS = (sc, sh, d) => { let k = 0; for (const i of sc.idx) if (c[i][d] === sh) k++; return k; };
+  const haveS = (sc, sh, d) => { let k = 0; for (const i of sc.idx) if (c[i][d] === sh || (sh === '早' && S.earlyEAsEarly && c[i][d] === '早E')) k++; return k; };
   const runBefore = (i, d) => { let k = 0; while (d - 1 - k >= 0 && isWorkish(c[i][d-1-k])) k++; return k; };
   const nextOk = (i, d) => d >= D || c[i][d] === '' || cls(c[i][d]) === 'off' || cls(c[i][d]) === 'leave';
   // 前月からの夜勤明け → 翌日は公休
@@ -696,7 +697,7 @@ function genUnit(U, S, di, mode, seed){
     }
   }
   // 公休：余裕のある日から置く
-  const dayShiftScopes = ['早', '日', '遅', '遅E'].map(sh => [sh, scs(sh)]);
+  const dayShiftScopes = ['早', '早E', '日', '遅', '遅E'].map(sh => [sh, scs(sh)]);
   const dayNeed = d => dayShiftScopes.reduce((a, [sh, l]) => a + l.reduce((b, sc) => b + needS(sc, sh, d), 0), 0);
   const slack = []; for (let d = 0; d < D; d++){ let a = 0; for (let i = 0; i < n; i++) if (free(i, d)) a++; slack.push(a - dayNeed(d)); }
   const rem = st.map((t, i) => (t.target || 0) - c[i].filter(x => x === '公').length);
@@ -724,7 +725,7 @@ function genUnit(U, S, di, mode, seed){
   }
   // 日勤帯
   for (let d = 0; d < D; d++){
-    for (const pass of [0, 1]) for (const sh of ['遅E', '遅', '早', '日']) for (const sc of scs(sh)){
+    for (const pass of [0, 1]) for (const sh of ['遅E', '早E', '遅', '早', '日']) for (const sc of scs(sh)){
       let k = (pass === 0 ? minS(sc, sh, d) : needS(sc, sh, d)) - haveS(sc, sh, d);
       while (k > 0){
         const cand = [];
@@ -732,7 +733,7 @@ function genUnit(U, S, di, mode, seed){
           if (!free(i, d)) continue;
           if (!allowSym(st[i], sh)) continue;
           const pv = d > 0 ? c[i][d-1] : '';
-          if (sh === '早' && (pv === '遅' || pv === '遅E' || pv === '準夜勤')) continue;
+          if ((sh === '早' || sh === '早E') && (pv === '遅' || pv === '遅E' || pv === '準夜勤')) continue;
           const pf = sh === '遅E' ? st[i].pref['遅'] : st[i].pref[sh];
           cand.push([-(pf / (st[i].pref['早'] + st[i].pref['日'] + st[i].pref['遅'])) - rnd() * 0.3, i]);
         }
@@ -878,7 +879,7 @@ function generateAll(S, mode){
 const hmToH = x => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(x || '')); return m ? +m[1] + (+m[2]) / 60 : null; };
 function defaultFte(){
   return { confirmed: true, weekHours: 40, method: 'cal', night: { s: '16:00', e: '09:00' },
-    hours: { '早': { s: '07:00', e: '16:00', brk: 1 }, '日': { s: '08:30', e: '17:30', brk: 1 }, '遅': { s: '10:00', e: '19:00', brk: 1 },
+    hours: { '早': { s: '07:00', e: '16:00', brk: 1 }, '早E': { s: '07:00', e: '16:00', brk: 1 }, '日': { s: '08:30', e: '17:30', brk: 1 }, '遅': { s: '10:00', e: '19:00', brk: 1 },
              '遅E': { s: '12:00', e: '21:00', brk: 1 }, '準夜勤': { s: '22:00', e: '07:00', brk: 1 }, '夜': { s: '16:00', e: '09:00', brk: 1.5 },
              '午前': { s: '08:30', e: '12:30', brk: 0 }, '午後': { s: '13:30', e: '17:30', brk: 0 } },
     leave: { '有休': 'add', 'リ休': 'add', '誕休': 'add', '特休': 'add', '研修': 'work', '忌引': 'none', '産休': 'none', '欠': 'none' } };
@@ -1149,6 +1150,7 @@ function renderRules(){
   const p = $('#p-rules');
   if (!S){ p.innerHTML = emptyState('rules'); return; }
   let h = `<p class="note">「目標」は余力があるときに目指す人数、「最低」はこれを下回るとエラーにする人数です。3〜5階（ユニット型）は 最低＝早1・日1・遅1、目標＝平日 早1・日2・遅2（土日祝は最低と同じ）を初期値にしています。2階（従来型）と夜勤・準夜勤・遅Eは取込んだ表からの推定値です。<b>違う箇所は修正</b>してください。</p>
+  <p><label><input type="checkbox" id="eAsE" ${S.earlyEAsEarly ? 'checked' : ''}> 早Eを「早」の人数に数える</label>　<span class="note">早Eの必要人数は、下の表の「早E」列で設定します（0＝使わない）。早Eに入れる職員は「⑦ マスタ・台帳」の「早E」で指定します。</span></p>
   <p>連続勤務の上限：<input type="number" id="maxC" min="3" max="10" value="${S.maxConsec}"> 日　　祝日（日にち・カンマ区切り）：<input id="hol" value="${S.holidays.join(',')}" placeholder="例 12"> <button id="bRe">人数を初期値に戻す（表から推定＋ユニット型の標準）</button></p>`;
   for (const u of unitsOf(S)){
     h += `<h4>${esc(u.key)}</h4><table class="t"><tr><th>区分</th><th>日</th>${SHIFTS.map(sh => `<th>${sh}</th>`).join('')}</tr>`;
@@ -1250,14 +1252,14 @@ function renderMaster(){
     h += `<tr><td><b>${esc(k)}</b></td><td>${esc(c.code || '')}</td><td>${esc(hh.s)}</td><td>${esc(hh.e)}</td><td>${hh.brkFlag ? '有' : ''}</td><td><input type="number" step="0.25" data-sm="${esc(k)}" data-f="brk" value="${hh.brk}" style="width:55px"></td><td>${sp ? (Math.round(sp.work * 100) / 100).toFixed(2) : '-'}</td></tr>`; }
   h += '</table></div></details>';
   h += `<h4>職員台帳</h4><p class="note">採用日・退職日・休職期間は、該当する日を自動で勤務対象外にします（空欄は制限なし）。「入れるシフト」は自動作成が参照します。休職・退職の期間に勤務が入っていると、エラーになります。</p>
-  <div style="overflow:auto;max-height:70vh"><table class="t"><tr><th>部署</th><th>職員</th><th>状況（今月）</th><th>採用日</th><th>退職日</th><th>休職開始</th><th>休職終了</th><th>職員ID<br>(社員コード)</th><th>祝日出勤可</th><th>早</th><th>日</th><th>遅</th><th>遅E</th><th>準夜</th><th>夜</th><th>夜勤の月上限<br>(回)</th><th>準夜の月上限<br>(回)</th><th>連続勤務上限<br>(日)</th><th>備考</th></tr>`;
+  <div style="overflow:auto;max-height:70vh"><table class="t"><tr><th>部署</th><th>職員</th><th>状況（今月）</th><th>採用日</th><th>退職日</th><th>休職開始</th><th>休職終了</th><th>職員ID<br>(社員コード)</th><th>祝日出勤可</th><th>早</th><th>日</th><th>遅</th><th>早E</th><th>遅E</th><th>準夜</th><th>夜</th><th>夜勤の月上限<br>(回)</th><th>準夜の月上限<br>(回)</th><th>連続勤務上限<br>(日)</th><th>備考</th></tr>`;
   for (const t of S.staff){
     const sec = S.sections.find(x => x.id === t.sec).title;
     let na = 0; for (let d = 0; d < S.D; d++) if (unavail(S, t, d)) na++;
     const st = na === 0 ? '全日対象' : na === S.D ? '全日対象外' : `${na}日対象外`;
     const chk = f => `<td><input type="checkbox" data-ld="${t.id}" data-f="${f}" ${t[f] !== false ? 'checked' : ''}></td>`;
     const dt = f => `<td><input type="date" data-ld="${t.id}" data-f="${f}" value="${t[f] || ''}"></td>`;
-    h += `<tr><td>${esc(sec)}</td><td>${esc(t.name)}</td><td class="${na ? 'bad' : ''}">${st}</td><td><input data-ld="${t.id}" data-f="empId" value="${esc(t.empId || '')}" size="8" placeholder="未入力"></td>${dt('hireDate')}${dt('retireDate')}${dt('leaveStart')}${dt('leaveEnd')}${chk('holidayOk')}${chk('canEarly')}${chk('canDay')}${chk('canLate')}<td><input type="checkbox" data-ld="${t.id}" data-f="canE" ${t.canE ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canJun" ${t.canJun ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canNight" ${t.canNight ? 'checked' : ''}></td>${['nightMax', 'junMax', 'maxConsec'].map(f => `<td><input type="number" min="0" max="31" data-ld="${t.id}" data-f="${f}" value="${t[f] == null ? '' : t[f]}" placeholder="なし" style="width:56px"></td>`).join('')}<td><input data-ld="${t.id}" data-f="memo" value="${esc(t.memo || '')}" size="14"></td></tr>`;
+    h += `<tr><td>${esc(sec)}</td><td>${esc(t.name)}</td><td class="${na ? 'bad' : ''}">${st}</td><td><input data-ld="${t.id}" data-f="empId" value="${esc(t.empId || '')}" size="8" placeholder="未入力"></td>${dt('hireDate')}${dt('retireDate')}${dt('leaveStart')}${dt('leaveEnd')}${chk('holidayOk')}${chk('canEarly')}${chk('canDay')}${chk('canLate')}<td><input type="checkbox" data-ld="${t.id}" data-f="canEE" ${t.canEE ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canE" ${t.canE ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canJun" ${t.canJun ? 'checked' : ''}></td><td><input type="checkbox" data-ld="${t.id}" data-f="canNight" ${t.canNight ? 'checked' : ''}></td>${['nightMax', 'junMax', 'maxConsec'].map(f => `<td><input type="number" min="0" max="31" data-ld="${t.id}" data-f="${f}" value="${t[f] == null ? '' : t[f]}" placeholder="なし" style="width:56px"></td>`).join('')}<td><input data-ld="${t.id}" data-f="memo" value="${esc(t.memo || '')}" size="14"></td></tr>`;
   }
   p.innerHTML = h + '</table></div>';
 }
@@ -1856,6 +1858,7 @@ document.addEventListener('change', e => {
     else q[f] = +t.value || 0;
     save(); return;
   }
+  if (t.id === 'eAsE'){ S.earlyEAsEarly = t.checked; save(); return; }
   if (t.id === 'maxC'){ S.maxConsec = Math.max(3, +t.value || 5); save(); return; }
   if (t.id === 'hol'){ S.holidays = t.value.split(/[,、\s]+/).map(Number).filter(n => n >= 1 && n <= 31); save(); return; }
   if (t.dataset.nu){ S[t.dataset.src][t.dataset.nu][t.dataset.sh][t.dataset.c] = Math.max(0, +t.value || 0); save(); return; }
