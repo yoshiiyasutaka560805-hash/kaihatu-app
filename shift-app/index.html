@@ -460,7 +460,7 @@ function applyRequests(S){
 // 翌月を始める：前月末の夜勤明けを引き継ぎ、他はクリア
 function newMonth(S, y, m){
   const D = new Date(y, m, 0).getDate();
-  const oldBase = restBase(S), nb = (S.restDays || REST_DAYS_DEFAULT)[D] ?? 9;
+  const oldBase = restBase(S), nb = restForMonth(S, m);
   for (const t of S.staff){
     if (t.auto && t.target === oldBase) t.target = nb;
     const carry = t.cells[t.cells.length - 1] === '夜';
@@ -578,9 +578,10 @@ function coverCheck(list, di, d, add){
   }
 }
 // 夜勤・準夜勤の回数のばらつき（出られる日が少ない人・個別に上限や回数を指定した人は除く）。差が1回以内なら0
-// 常勤の公休の基本日数（月の日数別）。2シフト（夜勤あり）の施設は、30日の月で9日が基本
-const REST_DAYS_DEFAULT = { 28: 8, 29: 9, 30: 9, 31: 10 };
-const restBase = S => (S.restDays || REST_DAYS_DEFAULT)[S.D] ?? 9;
+// 常勤の公休の基本日数（月別）。2シフト（夜勤あり）の施設：2月は8日、10月は10日、それ以外は9日
+const REST_DAYS_DEFAULT = { 2: 8, 10: 10 };
+const restForMonth = (S, m) => (S.restByMonth || REST_DAYS_DEFAULT)[m] ?? 9;
+const restBase = S => restForMonth(S, S.m);
 // 採用前・休職・退職・休暇で出られない日数
 function awayDays(S, t){ let n = 0; for (let d = 0; d < S.D; d++) if (d < t.from || unavail(S, t, d) || cls(t.cells[d]) === 'leave') n++; return n; }
 function spreadOf(U, S, key, can){
@@ -1175,7 +1176,7 @@ function renderRules(){
   const p = $('#p-rules');
   if (!S){ p.innerHTML = emptyState('rules'); return; }
   let h = `<p class="note">「目標」は余力があるときに目指す人数、「最低」はこれを下回るとエラーにする人数です。3〜5階（ユニット型）は 最低＝早1・日1・遅1、目標＝平日 早1・日2・遅2（土日祝は最低と同じ）を初期値にしています。2階（従来型）と夜勤・準夜勤・遅Eは取込んだ表からの推定値です。<b>違う箇所は修正</b>してください。</p>
-  <p>常勤の公休の基本日数（月の日数別）：${[28, 29, 30, 31].map(n => `${n}日の月 <input type="number" min="0" max="20" data-rd="${n}" value="${(S.restDays || REST_DAYS_DEFAULT)[n]}" style="width:52px">`).join('　')}　<button id="bRest">今月の常勤の公休数に反映（${S.D}日の月：${restBase(S)}日）</button>　<span class="note">夜勤フロアの常勤・特定職員が対象です。個別の公休数は、下の表で変更できます。</span></p>
+  <p>常勤の公休の基本日数（月別）：${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => `${n}月<input type="number" min="0" max="20" data-rd="${n}" value="${restForMonth(S, n)}" style="width:44px">`).join(' ')}　<button id="bRest">${S.m}月の常勤の公休数に反映（${restBase(S)}日）</button>　<span class="note">夜勤フロアの常勤・特定職員が対象です。個別の公休数は、下の表で変更できます。</span></p>
   <p><label><input type="checkbox" id="eAsE" ${S.earlyEAsEarly ? 'checked' : ''}> 早Eを「早」の人数に数える</label>　<span class="note">早Eの必要人数は、下の表の「早E」列で設定します（0＝使わない）。早Eに入れる職員は「⑦ マスタ・台帳」の「早E」で指定します。</span></p>
   <p>連続勤務の上限：<input type="number" id="maxC" min="3" max="10" value="${S.maxConsec}"> 日　　祝日（日にち・カンマ区切り）：<input id="hol" value="${S.holidays.join(',')}" placeholder="例 12"> <button id="bRe">人数を初期値に戻す（表から推定＋ユニット型の標準）</button></p>`;
   for (const u of unitsOf(S)){
@@ -2234,7 +2235,7 @@ document.addEventListener('change', e => {
     else q[f] = +t.value || 0;
     save(); return;
   }
-  if (t.dataset.rd){ S.restDays = Object.assign({}, S.restDays || REST_DAYS_DEFAULT); S.restDays[t.dataset.rd] = Math.max(0, +t.value || 0); save(); renderRules(); return; }
+  if (t.dataset.rd){ S.restByMonth = Object.assign({}, S.restByMonth || REST_DAYS_DEFAULT); S.restByMonth[t.dataset.rd] = Math.max(0, +t.value || 0); save(); renderRules(); return; }
   if (t.id === 'eAsE'){ S.earlyEAsEarly = t.checked; save(); return; }
   if (t.id === 'maxC'){ S.maxConsec = Math.max(3, +t.value || 5); save(); return; }
   if (t.id === 'hol'){ S.holidays = t.value.split(/[,、\s]+/).map(Number).filter(n => n >= 1 && n <= 31); save(); return; }
