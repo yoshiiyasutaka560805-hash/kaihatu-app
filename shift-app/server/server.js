@@ -29,9 +29,18 @@ const PUBLIC_ORIGINS = new Set(String(process.env.PUBLIC_ORIGIN || '').split(','
 const AUDIT_RETENTION_DAYS = +process.env.AUDIT_RETENTION_DAYS > 0 ? +process.env.AUDIT_RETENTION_DAYS : 0;
 const AUDIT_MAX_BYTES = +process.env.AUDIT_MAX_BYTES > 0 ? +process.env.AUDIT_MAX_BYTES : 5 * 1024 * 1024;
 const PW_MIN = 12, PW_MAX = 128;
+// 公開版（全職員向け閲覧）：all=全部署を全職員に見せる（既定） / own=自部署のみ。不正な値は安全側（own）に倒す
+const PUBLISHED_SCOPE = (() => {
+  const v = String(process.env.PUBLISHED_SCOPE || 'all').trim().toLowerCase();
+  if (v === 'all' || v === 'own') return v;
+  console.warn('WARNING: PUBLISHED_SCOPE は all か own です（"' + v + '" は不正。own として動作します）');
+  return 'own';
+})();
+const PUB_KEEP = +process.env.PUBLISH_KEEP > 0 ? +process.env.PUBLISH_KEEP : 10; // 公開履歴の保持世代数（月ごと）
 
 const MONTHS = path.join(DATA, 'months'), BACKUPS = path.join(DATA, 'backups'), AUDIT = path.join(DATA, 'audit.log'), AUDIT_DIR = path.join(DATA, 'audit'), SESS_FILE = path.join(DATA, 'sessions.json');
-for (const d of [DATA, MONTHS, BACKUPS, AUDIT_DIR]) fs.mkdirSync(d, { recursive: true, mode: 0o700 });
+const PUBLISHED = path.join(DATA, 'published'), PUB_HIST = path.join(PUBLISHED, 'history');
+for (const d of [DATA, MONTHS, BACKUPS, AUDIT_DIR, PUBLISHED, PUB_HIST]) fs.mkdirSync(d, { recursive: true, mode: 0o700 });
 
 // ---------- 共通 ----------
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -125,9 +134,12 @@ function perms(u) {
     readable: t => admin || u.role === 'manager1' || g.has(t),
     writable: t => admin || (m && g.has(t)),
     canWriteAny: admin || (m && g.size > 0),
+    canDraft: u.role !== 'staff',                              // 下書き（作成途中）を閲覧・編集できる（約10名想定）
+    canPublish: u.role === 'admin' || u.role === 'manager1',   // 公開・取り下げ
   };
 }
-const publicUser = (id, u) => ({ id, name: u.name, role: u.role, roleLabel: ROLES[u.role], groups: u.role === 'admin' ? ['*'] : (u.groups || []), mustChange: !!u.mustChange });
+const publicUser = (id, u) => ({ id, name: u.name, role: u.role, roleLabel: ROLES[u.role], groups: u.role === 'admin' ? ['*'] : (u.groups || []), mustChange: !!u.mustChange,
+  canDraft: u.role !== 'staff', canPublish: u.role === 'admin' || u.role === 'manager1', publishedScope: PUBLISHED_SCOPE });
 
 // ---------- 月データ ----------
 const monthFile = ym => path.join(MONTHS, ym + '.json');
@@ -226,6 +238,95 @@ function backup(ym, version, text) {
   atomicWrite(path.join(dir, `${ym}_v${String(version).padStart(6, '0')}_${stamp}.json`), text);
   const files = fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort();
   for (const f of files.slice(0, Math.max(0, files.length - BACKUP_KEEP))) { try { fs.unlinkSync(path.join(dir, f)); } catch (e) { /* ignore */ } }
+}
+
+// ---------- 公開版（全職員が閲覧）----------
+// 下書き（months/）とは別に data/published/<ym>.json に「公開時点の最小スキーマ」を保存する。
+// 職員台帳（採用日・退職日・休職期間・備考・職員ID等）・設定・needs・req・pins・コスト関連は含めない。
+const SENSITIVE_LEAVE = new Set(['欠', '欠勤', '産休', '忌引', '公(忌引)', '休職', '育休', '育児休業', '介護休', '介護休暇', '病休', '病欠', '傷病', '労災', '看護休', '生理休暇', '産前', '産後']);
+const ALL_LEAVE = new Set(['有休', 'リ休', '誕休', '特休', '研修', '欠', '欠勤', '産休', '忌引', '公(忌引)', '休職', '育休', '育児休業', '介護休', '介護休暇', '病休', '病欠', '傷病', '労災', '看護休', '生理休暇', '産前', '産後', '有給', '年休', '夏休', '冬休']);
+const MASK_POLICIES = ['sensitive', 'all-leave', 'none'];
+const MASKED_SYM = '休';
+const symNorm = v => String(v == null ? '' : v).replace(/[\\r\\n]+/g, ' ').normalize('NFKC').trim().slice(0, 20);
+function maskSym(v, policy) {
+  const s = symNorm(v);
+  if (policy === 'none' || !s) return s;
+  if (SENSITIVE_LEAVE.has(s)) return MASKED_SYM;
+  if (policy === 'all-leave' && ALL_LEAVE.has(s)) return MASKED_SYM;
+  return s;
+}
+const strN = (v, n) => String(v == null ? '' : v).replace(/[\\u0000-\\u001f]/g, ' ').trim().slice(0, n);
+const colorOk = c => (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : '');
+const pubFile = ym => path.join(PUBLISHED, ym + '.json');
+function readPub(ym) { try { return JSON.parse(fs.readFileSync(pubFile(ym), 'utf8')); } catch (e) { return null; } }
+function pubHistFiles(ym) {
+  try { return fs.readdirSync(path.join(PUB_HIST, ym)).filter(f => f.endsWith('.json')).sort(); } catch (e) { return []; }
+}
+function nextPubVersion(ym) {
+  let mx = 0; const cur = readPub(ym); if (cur && cur.publishVersion > mx) mx = cur.publishVersion;
+  for (const f of pubHistFiles(ym)) { const m = f.match(/_p(\\d+)_/); if (m && +m[1] > mx) mx = +m[1]; }
+  return mx + 1;
+}
+// 下書きの state → 公開用の最小スキーマ（マスク適用済み）。owners は職員IDの突合用で、応答には出さない
+function buildPublished(st, policy) {
+  const dim = new Date(st.y, st.m, 0).getDate();
+  const D = Number.isInteger(st.D) && st.D > 0 && st.D <= 31 ? Math.min(st.D, dim) : dim;
+  const used = new Set(), sections = [], staff = [], owners = [], idMap = new Map();
+  for (const x of st.sections) {
+    if (!st.staff.some(t => t.sec === x.id)) continue;
+    idMap.set(x.id, sections.length); sections.push({ id: sections.length, title: strN(x.title, 100) });
+  }
+  for (const t of st.staff) {
+    if (!idMap.has(t.sec)) continue;
+    const cells = []; for (let d = 0; d < D; d++) { const c = maskSym(Array.isArray(t.cells) ? t.cells[d] : '', policy); if (c) used.add(c); cells.push(c); }
+    staff.push({ sec: idMap.get(t.sec), label: strN(t.label, 20), koyo: strN(t.koyo, 20), name: strN(t.name, 50), cells });
+    owners.push(strN(t.empId, 40).normalize('NFKC'));
+  }
+  const colors = {}, hours = {}, srcC = (st.colors && typeof st.colors === 'object') ? st.colors : {}, srcH = (st.fte && st.fte.hours && typeof st.fte.hours === 'object') ? st.fte.hours : {};
+  for (const k of used) {
+    const c = srcC[k];
+    if (k === MASKED_SYM && !c) { const l = srcC['有休'] || {}; colors[k] = { bg: colorOk(l.bg) || '#fff3a3', fg: colorOk(l.fg), name: '休み' }; continue; }
+    if (c && typeof c === 'object') colors[k] = { bg: colorOk(c.bg), fg: colorOk(c.fg), name: strN(c.name, 30) };
+    const h = srcH[k];
+    if (h && typeof h === 'object' && /^\\d{1,2}:\\d{2}$/.test(h.s || '') && /^\\d{1,2}:\\d{2}$/.test(h.e || '')) hours[k] = { s: h.s, e: h.e };
+  }
+  const holidays = (Array.isArray(st.holidays) ? st.holidays : []).filter(n => Number.isInteger(n) && n >= 1 && n <= D);
+  const events = (Array.isArray(st.extraHol) ? st.extraHol : []).filter(x => x && /^\\d{4}-\\d{2}-\\d{2}$/.test(x.date || '')).slice(0, 60).map(x => ({ date: x.date, name: strN(x.name, 40) }));
+  return { state: { y: st.y, m: st.m, D, sections, staff, holidays, events, colors, hours }, owners };
+}
+function pubHistWrite(ym, rec) {
+  const dir = path.join(PUB_HIST, ym);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const stamp = new Date().toISOString().replace(/[-:.]/g, '');
+  atomicWrite(path.join(dir, `${ym}_p${String(rec.publishVersion).padStart(6, '0')}_${stamp}.json`), JSON.stringify(rec));
+  const files = pubHistFiles(ym);
+  for (const f of files.slice(0, Math.max(0, files.length - PUB_KEEP))) { try { fs.unlinkSync(path.join(dir, f)); } catch (e) { /* ignore */ } }
+}
+// 閲覧者向けの応答（スコープ・自分の行の印付け）。職員ID・公開者・下書き版は含めない
+function viewPublished(rec, a, P) {
+  const st = rec.state, keepSec = new Map(), sections = [];
+  for (const x of st.sections) if (PUBLISHED_SCOPE === 'all' || P.readable(x.title)) { keepSec.set(x.id, sections.length); sections.push({ id: sections.length, title: x.title }); }
+  const me = strN(a.id, 40).normalize('NFKC'), staff = [];
+  st.staff.forEach((t, i) => {
+    if (!keepSec.has(t.sec)) return;
+    const o = { sec: keepSec.get(t.sec), label: t.label, koyo: t.koyo, name: t.name, cells: maskCells(t.cells, rec.maskPolicy) };
+    if (me && rec.owners && rec.owners[i] === me) o.isMe = true;
+    staff.push(o);
+  });
+  const used = new Set(); staff.forEach(t => t.cells.forEach(c => c && used.add(c)));
+  const colors = {}, hours = {};
+  for (const k of used) { if (st.colors[k]) colors[k] = st.colors[k]; if (st.hours[k]) hours[k] = st.hours[k]; }
+  return { ym: rec.ym, publishVersion: rec.publishVersion, publishedAt: rec.publishedAt, note: rec.note || '', masked: rec.maskPolicy !== 'none', scope: PUBLISHED_SCOPE,
+    state: { y: st.y, m: st.m, D: st.D, sections, staff, holidays: st.holidays, events: st.events, colors, hours } };
+}
+const maskCells = (cells, policy) => cells.map(c => maskSym(c, policy)); // 保存時にもマスク済みだが、読み出しでも再適用（冪等）
+// 閲覧記録の間引き：1ユーザー1日1回（メモリ。再起動で1回増える程度）
+let viewDay = '', viewSeen = new Set();
+function viewOnce(id) {
+  const day = new Date().toISOString().slice(0, 10);
+  if (day !== viewDay) { viewDay = day; viewSeen = new Set(); }
+  if (viewSeen.has(id)) return false;
+  viewSeen.add(id); return true;
 }
 
 // ---------- 認証 ----------
@@ -389,6 +490,7 @@ async function handle(req, res) {
   if (p === '/api/me' && method === 'GET') return send(res, 200, publicUser(a.id, a.user));
 
   if (p === '/api/months' && method === 'GET') {
+    if (!P.canDraft) { audit({ event: 'draft_denied', user: a.id, ip, path: 'months' }); return err(res, 403, 'forbidden', '下書きを閲覧する権限がありません（公開された勤務表のみ閲覧できます）'); }
     const list = [];
     for (const f of fs.readdirSync(MONTHS)) {
       const ym = f.replace(/\.json$/, ''); if (!YM_RE.test(ym) || !f.endsWith('.json')) continue;
@@ -405,9 +507,66 @@ async function handle(req, res) {
     return send(res, 200, { entries: lines.slice(-n).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean) });
   }
 
+
+  // ---- 公開版（全ロール閲覧可）----
+  if (p === '/api/published' && method === 'GET') {
+    const out = [];
+    for (const f of fs.readdirSync(PUBLISHED)) {
+      const ym = f.replace(/\.json$/, ''); if (!f.endsWith('.json') || !YM_RE.test(ym)) continue;
+      const r = readPub(ym); if (!r || !r.state) continue;
+      if (PUBLISHED_SCOPE === 'own' && !r.state.sections.some(x => P.readable(x.title))) continue;
+      const e = { ym, publishedAt: r.publishedAt, publishVersion: r.publishVersion };
+      if (P.canDraft) Object.assign(e, { publishedBy: r.publishedBy, maskPolicy: r.maskPolicy, draftVersion: r.draftVersion });
+      out.push(e);
+    }
+    out.sort((x, y) => (x.ym < y.ym ? -1 : 1));
+    return send(res, 200, { months: out, scope: PUBLISHED_SCOPE });
+  }
+  const pm = p.match(/^\/api\/published\/([^/]+)$/);
+  if (pm && method === 'GET') {
+    const ym = pm[1];
+    if (!YM_RE.test(ym)) return err(res, 400, 'bad_ym', '年月の形式が不正です（例 2026-10）');
+    const r = readPub(ym);
+    if (!r || !r.state) return err(res, 404, 'not_published', 'この月の勤務表はまだ公開されていません');
+    const v = viewPublished(r, a, P);
+    if (!v.state.sections.length) return err(res, 404, 'not_published', 'この月の勤務表はまだ公開されていません');
+    if (viewOnce(a.id)) audit({ event: 'published_view', user: a.id, ip, ym, role: a.user.role, note: '1日1回に間引き' });
+    return send(res, 200, v);
+  }
+  const pb = p.match(/^\/api\/month\/([^/]+)\/(publish|unpublish)$/);
+  if (pb && method === 'POST') {
+    const ym = pb[1], act = pb[2];
+    if (!YM_RE.test(ym)) return err(res, 400, 'bad_ym', '年月の形式が不正です（例 2026-10）');
+    if (!P.canPublish) { audit({ event: act + '_denied', user: a.id, ip, ym }); return err(res, 403, 'forbidden', '公開・取り下げの権限がありません'); }
+    const b = await readBody(req);
+    if (act === 'unpublish') {
+      const cur = readPub(ym);
+      if (!cur) return err(res, 404, 'not_published', 'この月は公開されていません');
+      try { pubHistWrite(ym, cur); } catch (e) { console.error('publish history failed', e.message); } // 履歴に退避（既に同版があっても世代数内で上書き相当）
+      fs.unlinkSync(pubFile(ym));
+      audit({ event: 'unpublish', user: a.id, ip, ym, publishVersion: cur.publishVersion });
+      return send(res, 200, { ok: true });
+    }
+    const policy = b.maskPolicy === undefined ? 'sensitive' : b.maskPolicy;
+    if (!MASK_POLICIES.includes(policy)) return err(res, 400, 'bad_policy', 'maskPolicy は sensitive / all-leave / none のいずれかです');
+    const note = strN(b.note, 200);
+    const draft = readMonth(ym);
+    if (!draft || !draft.state) return err(res, 404, 'no_month', '公開する下書きがありません（先に保存してください）');
+    if (draft.state.y * 100 + draft.state.m !== +ym.slice(0, 4) * 100 + +ym.slice(5)) return err(res, 400, 'ym_mismatch', 'URLの年月と下書きの年月が一致しません');
+    if (b.version !== undefined && b.version !== draft.version) return send(res, 409, { error: 'conflict', message: '下書きが更新されています。最新の下書きを確認してから公開してください。', version: draft.version, shiftapp: true });
+    const built = buildPublished(draft.state, policy);
+    if (!built.state.staff.length) return err(res, 400, 'empty', '公開できる職員がいません');
+    const rec = { ym, publishVersion: nextPubVersion(ym), publishedAt: new Date().toISOString(), publishedBy: a.id, maskPolicy: policy, note, draftVersion: draft.version, state: built.state, owners: built.owners };
+    atomicWrite(pubFile(ym), JSON.stringify(rec));
+    try { pubHistWrite(ym, rec); } catch (e) { console.error('publish history failed', e.message); }
+    audit({ event: 'publish', user: a.id, ip, ym, publishVersion: rec.publishVersion, maskPolicy: policy, draftVersion: draft.version });
+    return send(res, 200, { ok: true, ym, publishVersion: rec.publishVersion, publishedAt: rec.publishedAt, maskPolicy: policy, draftVersion: draft.version });
+  }
+
   const mm = p.match(/^\/api\/month\/([^/]+)$/);
   if (mm) {
     const ym = mm[1];
+    if (!P.canDraft) { audit({ event: 'draft_denied', user: a.id, ip, path: 'month', method }); return err(res, 403, 'forbidden', '下書きを閲覧・編集する権限がありません（公開された勤務表のみ閲覧できます）'); }
     if (!YM_RE.test(ym)) return err(res, 400, 'bad_ym', '年月の形式が不正です（例 2026-10）');
     if (method === 'GET') {
       const m = readMonth(ym);
