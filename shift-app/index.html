@@ -158,6 +158,8 @@ table.t input[type=number]{width:56px}
 .exCol button{padding:0 6px;margin-left:3px;box-shadow:none;border-width:1px;font-size:11px}
 .exTa{width:100%;box-sizing:border-box;font:12px/1.5 ui-monospace,Consolas,monospace;border:2px solid #b9cde0;border-radius:10px;padding:8px;margin-top:6px}
 .exMsg{min-height:1.4em;color:#0a4f99;font-weight:600}.exSum{font-size:13px}.exRow td{background:#fdecea}
+/* e3out */
+.e3steps{margin:6px 0 6px 1.2em;padding:0}.e3g{border-top:1px solid #d5dde8;margin-top:10px;padding-top:6px}.e3pv{font-size:12px}.e3pv td,.e3pv th{min-width:24px;text-align:center}.e3ta{max-width:100%}
 </style>
 </head>
 <body>
@@ -1618,7 +1620,7 @@ function renderExport(){
   <p class="btnrow"><button id="exCdDl">対応表CSVをダウンロード</button> <button id="exCdCopy">対応表をコピー</button> <button data-ex="gomaster">⑦ マスタ・台帳へ</button></p>
   <div style="overflow:auto;max-height:50vh"><table class="t"><tr><th>記号</th><th>コード</th><th>名称</th><th>始業</th><th>終業</th><th>休憩(h)</th><th>実働(h)</th><th>今月の使用</th></tr>`;
   tb.forEach(x => { h += `<tr${!x.code && x.used ? ' class="exRow"' : ''}><td><b>${esc(x.sym)}</b></td><td class="${x.code ? '' : 'exRed'}">${x.code ? esc(x.code) : (x.used ? '未設定！' : '未設定')}</td><td>${esc(x.name)}</td><td>${x.start}</td><td>${x.end}</td><td>${x.brk}</td><td>${x.work}</td><td>${x.used || ''}</td></tr>`; });
-  p.innerHTML = h + '</table></div></div>';
+  p.innerHTML = h + '</table></div></div>' + (typeof e3outCard === 'function' ? e3outCard() : '');
   EXP.text = r.bom;
 }
 function expDownload(name, text){
@@ -1646,6 +1648,81 @@ document.addEventListener('click', async e => {
   if (t.id === 'exCdCopy'){ const ta = $('#exTa'), c = buildCodeCsv(S); ta.value = c; msg(await expCopy(c, ta) ? 'パターンコード対応表をコピーしました。' : 'コピーできませんでした。上の欄を選択済みです。'); return; }
 });
 // ==== EXPORT-END ====
+// ==== E3OUT-START ====
+// e3Shift 勤務表Excelへ貼り戻すための出力（S.e3.groups の取込位置を前提）。実職員名は出さない。
+function e3Col(n){ let s = ''; while (n > 0){ const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = (n - 1 - r) / 26 | 0; } return s; }
+function e3Cell(v){ return String(v == null ? '' : v).replace(/[\r\n\t]/g, ' '); }
+function e3Rows(S, gi){
+  const g = S.e3 && S.e3.groups && S.e3.groups[gi]; if (!g) return [];
+  const days = g.days | 0;
+  return (g.staffIds || []).map(id => {
+    if (id == null) return new Array(days).fill('');
+    const t = S.staff.find(x => x.id === id);
+    return Array.from({ length: days }, (_, d) => t ? e3Cell(t.cells[d]) : '');
+  });
+}
+function buildE3PasteBlock(S, groupIndex, options){
+  return e3Rows(S, groupIndex).map(r => r.join('\t')).join('\n');
+}
+function e3Info(S, gi){
+  const g = S.e3.groups[gi], rows = (g.staffIds || []).length, days = g.days | 0, fr = g.firstRow || 6, fc = g.firstCol || 12;
+  return { file: g.file || '', name: (g.title || '') + (g.label ? ' ' + g.label : ''), rows, staffN: (g.staffIds || []).filter(x => x != null).length, days,
+    from: e3Col(fc) + fr, to: e3Col(fc + Math.max(days, 1) - 1) + (fr + Math.max(rows, 1) - 1) };
+}
+function e3Check(S){
+  const out = { warns: [], groups: [] };
+  if (!S || !S.e3 || !S.e3.groups || !S.e3.groups.length) return out;
+  let errs = 0; try { errs = validateAll(S).issues.filter(x => x.sev === 'E').length; } catch (e) {}
+  if (errs) out.warns.push(`勤務表にエラーが${errs}件残っています（「⑤ 勤務表」で確認してください）`);
+  if (S.e3.ym && (S.e3.ym.y != null ? (S.e3.ym.y !== S.y || S.e3.ym.m !== S.m) : String(S.e3.ym).replace(/\D/g, '') !== `${S.y}${String(S.m).padStart(2, '0')}`))
+    out.warns.push('取込後に対象の年月が変わっています。貼り付け先のExcelと月が合っているか確認してください');
+  let missing = 0;
+  S.e3.groups.forEach((g, gi) => {
+    const w = [], ids = (g.staffIds || []).filter(x => x != null);
+    const miss = ids.filter(id => !S.staff.some(t => t.id === id)).length; missing += miss;
+    if (miss) w.push(`取込時の職員が${miss}名、現在のデータに見つかりません（職員を削除していませんか）`);
+    if ((g.days | 0) !== S.D) w.push(`日数が取込時（${g.days}日）と現在（${S.D}日）で違います`);
+    if (g.legend){
+      const cnt = {}; ids.forEach(id => { const t = S.staff.find(x => x.id === id); if (t) t.cells.slice(0, g.days | 0).forEach(v => { if (v && !Object.prototype.hasOwnProperty.call(g.legend, v)) cnt[v] = (cnt[v] || 0) + 1; }); });
+      const k = Object.keys(cnt);
+      if (k.length) w.push(`e3側の凡例にない記号があります：${k.map(x => `「${x}」${cnt[x]}件`).join('、')}（貼り付けると「未定義のシフト」になる可能性）`);
+    }
+    out.groups.push(w);
+  });
+  const total = S.e3.groups.reduce((a, g) => a + (g.staffIds || []).filter(x => x != null).length, 0);
+  if (!missing && S.staff.length > total) out.warns.push(`取込時より職員が${S.staff.length - total}名増えています。増えた職員はどのExcelにも出力されません`);
+  return out;
+}
+function e3outCard(){
+  let h = `<h4>e3Shift の勤務表Excelへ貼り戻す</h4><div class="card e3out">`;
+  if (!S.e3 || !S.e3.groups || !S.e3.groups.length) return h + `<p class="note">e3Shift の xlsx を取り込んだデータのみ対象です。</p></div>`;
+  const ck = e3Check(S);
+  h += `<ol class="e3steps"><li>e3のxlsxを開き、「<b>L6</b>」のセルを選ぶ</li><li>下の「コピー」を押し、そのまま貼り付ける</li><li>内容を確認して保存し、e3Shiftへ取り込む</li></ol>`;
+  h += ck.warns.length ? ck.warns.map(w => `<p class="exNg">▲ ${esc(w)}</p>`).join('') : `<p class="exOk">● 貼り付け前のチェックで問題は見つかりませんでした。</p>`;
+  S.e3.groups.forEach((g, gi) => {
+    const f = e3Info(S, gi), rows = e3Rows(S, gi);
+    const pv = rows.slice(0, 5).map((r, i) => `<tr><th>${i + 1}</th>${r.slice(0, 12).map(v => `<td>${esc(v)}</td>`).join('')}${r.length > 12 ? '<td>…</td>' : ''}</tr>`).join('');
+    h += `<div class="e3g"><p><b>${esc(f.name)}</b>　<span class="note2">${esc(f.file)}</span></p>
+    <p>職員行 ${f.rows}行（職員${f.staffN}名）・${f.days}日　貼り付け先：<b>${f.from}</b> から <b>${f.to}</b></p>
+    ${ck.groups[gi].map(w => `<p class="exNg">▲ ${esc(w)}</p>`).join('')}
+    <div style="overflow-x:auto;max-width:100%"><table class="t e3pv">${pv}</table></div><p class="note2">プレビューは先頭5行・先頭12日のみ（氏名は表示しません）</p>
+    <p class="btnrow"><button class="pri" data-e3="copy" data-g="${gi}">このグループをコピー</button></p>
+    <p class="e3msg exMsg" role="status" data-g="${gi}"></p><textarea class="exTa e3ta" data-g="${gi}" readonly rows="6" style="display:none" aria-label="貼り付け用データ"></textarea></div>`;
+  });
+  return h + '</div>';
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest ? e.target.closest('button[data-e3="copy"]') : null; if (!t || !S || !S.e3) return;
+  const gi = +t.dataset.g, p = $('#p-export'), ta = p.querySelector(`.e3ta[data-g="${gi}"]`), m = p.querySelector(`.e3msg[data-g="${gi}"]`);
+  const text = buildE3PasteBlock(S, gi), f = e3Info(S, gi);
+  ta.value = text;
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (x) {}
+  if (!ok){ try { ta.style.display = 'block'; ta.focus(); ta.select(); ok = !!(document.execCommand && document.execCommand('copy')); } catch (x) {} }
+  if (ok){ ta.style.display = 'none'; m.textContent = `コピーしました。e3のxlsxで ${f.from} を選んで貼り付けてください。`; }
+  else { ta.style.display = 'block'; ta.focus(); ta.select(); m.textContent = 'コピーできませんでした。下の欄を選択済みです。Ctrl+C（Macは⌘C）でコピーしてください。'; }
+});
+// ==== E3OUT-END ====
 
 // ---- イベント ----
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.p));
