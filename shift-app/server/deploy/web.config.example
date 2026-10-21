@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  IIS（URL Rewrite + Application Request Routing）で shift-app へリバースプロキシする例。
+  サイトのルート（例 C:\inetpub\shift-app\web.config）に配置。
+  事前準備（管理者）:
+    1) IIS に「URL Rewrite」と「Application Request Routing 3.0」をインストール（オフラインインストーラを情シスが入手）
+    2) IIS マネージャー > サーバー > Application Request Routing Cache > Server Proxy Settings > 「Enable proxy」にチェック
+    3) HTTPS バインディングに社内CAの証明書を設定（HTTP はHTTPSへ転送）
+    4) shift-app 側の環境変数: HOST=127.0.0.1 PORT=8443 TRUST_PROXY=1 SECURE_COOKIE=1 PUBLIC_ORIGIN=https://shift.example.local
+       ※ARRは既定で Host ヘッダを 127.0.0.1:8443 に書き換えるため、PUBLIC_ORIGIN の設定が必須（CSRF検証用）。
+  X-Forwarded-For: ARR は既定で「追記」するため、クライアント偽装値が先頭に残る恐れがある。
+    下の ruleで HTTP_X_FORWARDED_FOR を {REMOTE_ADDR} で上書きする。allowedServerVariables が
+    web.config で拒否される（HTTP 500.19）場合は、IIS マネージャー > サイト > URL Rewrite > View Server Variables で
+    HTTP_X_FORWARDED_FOR を許可登録する（またはサーバー管理者が applicationHost.config に追加）。
+-->
+<configuration>
+  <system.webServer>
+    <rewrite>
+      <allowedServerVariables>
+        <add name="HTTP_X_FORWARDED_FOR" />
+        <add name="HTTP_X_FORWARDED_PROTO" />
+      </allowedServerVariables>
+      <rules>
+        <rule name="HttpToHttps" stopProcessing="true">
+          <match url="(.*)" />
+          <conditions><add input="{HTTPS}" pattern="^OFF$" /></conditions>
+          <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
+        </rule>
+        <rule name="ShiftAppProxy" stopProcessing="true">
+          <match url="(.*)" />
+          <serverVariables>
+            <set name="HTTP_X_FORWARDED_FOR" value="{REMOTE_ADDR}" />
+            <set name="HTTP_X_FORWARDED_PROTO" value="https" />
+          </serverVariables>
+          <action type="Rewrite" url="http://127.0.0.1:8443/{R:1}" />
+        </rule>
+      </rules>
+      <outboundRules>
+        <rule name="HSTS">
+          <match serverVariable="RESPONSE_Strict_Transport_Security" pattern=".*" />
+          <action type="Rewrite" value="max-age=31536000" />
+        </rule>
+      </outboundRules>
+    </rewrite>
+    <security>
+      <requestFiltering>
+        <requestLimits maxAllowedContentLength="6291456" />
+      </requestFiltering>
+      <!-- アクセス元IP制限（「IP and Domain Restrictions」機能をインストールした場合）。実際の社内セグメントに置き換える:
+      <ipSecurity allowUnlisted="false">
+        <add ipAddress="192.168.10.0" subnetMask="255.255.255.0" allowed="true" />
+        <add ipAddress="192.168.20.0" subnetMask="255.255.255.0" allowed="true" />
+      </ipSecurity>
+      -->
+    </security>
+    <httpProtocol>
+      <customHeaders>
+        <remove name="X-Powered-By" />
+      </customHeaders>
+    </httpProtocol>
+  </system.webServer>
+</configuration>

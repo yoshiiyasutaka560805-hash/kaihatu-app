@@ -1,0 +1,62 @@
+# /etc/systemd/system/shift-app.service
+# 事前準備（root）:
+#   useradd --system --home-dir /var/lib/shift-app --shell /usr/sbin/nologin shift-app
+#   install -d -o root -g shift-app -m 0750 /etc/shift-app      # env ファイル置き場
+#   cp env.example /etc/shift-app/env ; chown root:shift-app /etc/shift-app/env ; chmod 0640 /etc/shift-app/env
+#   アプリ一式を /opt/kaihatu-app に配置（実行ユーザーに書込権限は不要。root 所有でよい）
+# 有効化: systemctl daemon-reload && systemctl enable --now shift-app
+# 確認  : systemctl status shift-app ; journalctl -u shift-app -n 50
+# ユーザー管理: sudo -u shift-app env DATA_DIR=/var/lib/shift-app node /opt/kaihatu-app/shift-app/server/adduser.js --list
+#   ※ DynamicUser は使わない：adduser.js（CLI）とサービスが同じ実UIDでないと data/*.json（0600）を相互に読めないため。
+[Unit]
+Description=Shift app server (internal)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=shift-app
+Group=shift-app
+WorkingDirectory=/opt/kaihatu-app
+EnvironmentFile=/etc/shift-app/env
+ExecStart=/usr/bin/node /opt/kaihatu-app/shift-app/server/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+# 保存先（/var/lib/shift-app を作成し User 所有・0700 にする）
+StateDirectory=shift-app
+StateDirectoryMode=0700
+UMask=0077
+
+# --- 堅牢化 ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# 注意: Node.js(V8) の JIT のため MemoryDenyWriteExecute=true は付けない（起動できなくなる）
+# 外向き通信を一切禁止したい場合（プロキシ=同一ホストの127.0.0.1のみ受ける構成）は有効化を検討:
+#IPAddressDeny=any
+#IPAddressAllow=localhost
+# 直接LAN公開（HOST=0.0.0.0）の場合は IPAddressAllow に社内セグメントを列挙
+
+[Install]
+WantedBy=multi-user.target

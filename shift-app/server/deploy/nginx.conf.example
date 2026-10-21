@@ -1,0 +1,61 @@
+# /etc/nginx/conf.d/shift-app.conf （例）  ※ホスト名・証明書パス・IP範囲は環境に合わせて変更
+# 前提: shift-app は HOST=127.0.0.1 PORT=8443、env に TRUST_PROXY=1 / SECURE_COOKIE=1 / PUBLIC_ORIGIN=https://shift.example.local
+# 重要: X-Forwarded-For は $remote_addr で「上書き」する（$proxy_add_x_forwarded_for は使わない。
+#       クライアントが偽装した値を先頭に残さないため）。
+
+limit_req_zone $binary_remote_addr zone=shift_login:1m rate=10r/m;
+
+server {
+    listen 80;
+    server_name shift.example.local;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name shift.example.local;
+
+    # 社内CAが発行した証明書（検証用は make-selfsigned.sh）。秘密鍵は root のみ読める権限に。
+    ssl_certificate     /etc/nginx/tls/shift.crt;
+    ssl_certificate_key /etc/nginx/tls/shift.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:5m;
+    ssl_session_timeout 1h;
+    ssl_session_tickets off;
+
+    server_tokens off;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # --- アクセス元IP制限（職員用セグメントのみ許可。実際のアドレス帯に置き換える） ---
+    #allow 192.168.10.0/24;   # 例: 職員用VLAN
+    #allow 192.168.20.0/24;   # 例: 事務所
+    #deny  all;
+
+    client_max_body_size 6m;          # アプリの上限は5MB
+    access_log /var/log/nginx/shift-app.access.log;   # 勤務内容はURLに含まれないが、ログの保管期間も方針に含める
+    error_log  /var/log/nginx/shift-app.error.log warn;
+
+    # ログインAPIは回数制限（ブルートフォース対策。アプリ側のロックと二重化）
+    location = /api/login {
+        limit_req zone=shift_login burst=10 nodelay;
+        proxy_pass http://127.0.0.1:8443;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_redirect off;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:8443;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $remote_addr;     # 上書き（追記しない）
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        proxy_redirect off;
+    }
+}
