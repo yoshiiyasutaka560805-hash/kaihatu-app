@@ -49,7 +49,7 @@ async function startServer(dir, env = {}) {
   const c = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dir, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = ''; c.stdout.on('data', d => { out += d; }); c.stderr.on('data', d => { out += d; });
   await new Promise((res, rej) => { c.stdout.on('data', d => /listening/.test(d) && res()); c.on('exit', code => rej(new Error('server exited ' + code + out))); setTimeout(() => rej(new Error('start timeout')), 10000); });
-  const stop = () => new Promise(r => { c.on('exit', r); c.kill(); });
+  const stop = () => new Promise(r => { if (c.exitCode !== null || c.signalCode) return r(); c.on('exit', r); c.kill(); });
   return { child: c, base: `http://127.0.0.1:${port}`, stop, out: () => out };
 }
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'shiftapp-test2-'));

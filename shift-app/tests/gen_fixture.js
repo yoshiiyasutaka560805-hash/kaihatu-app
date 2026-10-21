@@ -114,17 +114,31 @@ function build(opt){
         p.cells[best] = '公'; rest++; cand.splice(cand.indexOf(best), 1);
       }
     }
-    // 日勤帯：残りに早・日・遅・遅E
+    // 日勤帯：ラベルごとに 早・日・遅 の必要人数（平日 早1〜2・日2・遅2／土日祝 各1）を満たし、遅Eはフロアで1名、残りは希望傾向でランダム
     for (let d = 0; d < D; d++){
-      let lateE = people.filter(p => free(p, d) && !blocked(p, d) && p.canJ).length && rnd() < 0.9;
+      const we = isWe(d);
+      const okFor = (p, sh) => !(sh === '早' && ['遅', '遅E', '準夜勤'].includes(d > 0 ? p.cells[d - 1] : ''));
+      const takeFrom = (pool, sh, k) => {
+        for (let q = 0; q < k; q++){
+          const c = pool.filter(p => free(p, d) && !blocked(p, d) && okFor(p, sh));
+          if (!c.length) return;
+          c.sort((a, b) => (a.pref[sh === '早' ? 0 : sh === '日' ? 1 : 2] * -1 + (rnd() - 0.5) * 2.5) - (b.pref[sh === '早' ? 0 : sh === '日' ? 1 : 2] * -1 + (rnd() - 0.5) * 2.5));
+          c[0].cells[d] = sh;
+        }
+      };
+      takeFrom(people.filter(p => p.canJ === false || rnd() < 0.5), '遅E', rnd() < 0.92 ? 1 : 0);
+      for (const [lab] of labels){
+        const pool = people.filter(p => p.lab === lab);
+        takeFrom(pool, '早', we ? 1 : (unitType ? 1 : 2));
+        takeFrom(pool, '遅', we ? 1 : (unitType ? 2 : 1));
+        takeFrom(pool, '日', we ? 1 : (unitType ? 2 : 1));
+      }
       for (const p of people){
-        if (!free(p, d)) continue;
-        if (blocked(p, d)) continue;
+        if (!free(p, d) || blocked(p, d)) continue;
         const pv = d > 0 ? p.cells[d - 1] : '';
         const w = p.pref.slice(); if (pv === '遅' || pv === '遅E' || pv === '準夜勤') w[0] = 0;
-        let sh = ['早', '日', '遅'][(() => { const t = w[0] + w[1] + w[2]; let r = rnd() * t; return r < w[0] ? 0 : r < w[0] + w[1] ? 1 : 2; })()];
-        if (sh === '遅' && lateE && p.canJ === false && rnd() < 0.5){ sh = '遅E'; lateE = false; }
-        p.cells[d] = sh;
+        const t = w[0] + w[1] + w[2]; const r = rnd() * t;
+        p.cells[d] = r < w[0] ? '早' : r < w[0] + w[1] ? '日' : '遅';
       }
     }
     for (let d = 0; d < D; d++) if (newcomer.cells[d] === '__') newcomer.cells[d] = '';

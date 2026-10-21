@@ -251,7 +251,7 @@ const LEAVE = new Set(['有休','リ休','誕休','忌引','産休','欠','研�
 const PALETTE = ['早','日','遅','遅E','夜','／','準夜勤','公','有休','リ休','誕休','研修','欠',''];
 
 function normSym(v){
-  v = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
+  v = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').normalize('NFKC').trim(); // 全角Ｅ・全角数字「９－１５」・半角カナを半角表記に揃える
   if (v === '/' ) v = '／';
   return v;
 }
@@ -289,13 +289,17 @@ function importText(text){
   let y = null, m = null;
   const mm = text.match(/令和\s*(\d+)\s*年\s*(\d+)\s*月/);
   if (mm){ y = 2018 + (+mm[1]); m = +mm[2]; }
+  else { const sm = text.match(/(20\d\d)\s*年\s*(\d{1,2})\s*月/); if (sm){ y = +sm[1]; m = +sm[2]; } }
+  if (!y || m < 1 || m > 12){ const n = new Date(); y = n.getFullYear(); m = n.getMonth() + 1; }
+  const dim = new Date(y, m, 0).getDate(), notes = []; // 月の日数を超える列（31日列のある様式で30日の月など）は取り込まない
   const sections = [], staff = [];
   let cur = null, label = '';
   for (const raw of rows){
     const r = raw.map(x => String(x == null ? '' : x).trim());
     if (r[2] === '1' && r[3] === '2' && r[4] === '3'){
       let D = 0; while (/^\d+$/.test(r[2 + D] || '')) D++;
-      cur = { id: sections.length, title: normTitle(r[0] === 'No' ? '' : r[0]), D, auto: false };
+      if (D > dim && !notes.length) notes.push(`${dim + 1}日以降の列は${m}月（${dim}日まで）を超えるため無視しました`);
+      cur = { id: sections.length, title: normTitle(r[0] === 'No' ? '' : r[0]), D: Math.min(D, dim), auto: false };
       sections.push(cur); label = ''; continue;
     }
     if (!cur) continue;
@@ -314,10 +318,9 @@ function importText(text){
   const used = sections.filter(s => staff.some(t => t.sec === s.id));
   if (!used.length) throw new Error('勤務表の見出し行（No／氏名／1 2 3…）が見つかりません');
   const D = Math.max(...used.map(s => s.D));
-  if (!y){ const n = new Date(); y = n.getFullYear(); m = n.getMonth() + 1; }
   const secs = used.map(s => ({ ...s, title: s.title || '全体' }));
   const S = { y, m, D, sections: secs, staff: staff.filter(t => secs.some(s => s.id === t.sec)),
-              needs: {}, holidays: [], maxConsec: 5 };
+              needs: {}, holidays: [], maxConsec: 5, importNotes: notes };
   for (const sec of S.sections)
     sec.auto = S.staff.some(t => t.sec === sec.id && t.cells.includes('夜'));
   for (const t of S.staff){
@@ -871,7 +874,7 @@ const E3_PATTERNS = `500|日勤|08:30|17:30|1
 606|14.5-17.5|14:30|17:30|0
 607|15-19|15:00|19:00|0
 994|研修|08:30|17:30|0`.split('\n').map(l => { const a = l.split('|'); return { code: a[0], sym: a[1], s: a[2], e: a[3], brkFlag: a[4] === '1' }; });
-const E3_CODES = { '／': '504', 'リ休': '993', '公': '996', '有休': '997', '特休': '998', '誕休': '999' };
+const E3_CODES = { '日': '500', '／': '504', 'リ休': '993', '公': '996', '有休': '997', '特休': '998', '誕休': '999' };
 // 労働基準法34条：労働時間が6時間を超えれば45分、8時間を超えれば1時間以上の休憩（拘束時間から必要最小限を算出）
 function spanOf(h){ const a = hmToH(h.s), b0 = hmToH(h.e); if (a == null || b0 == null) return 0; return (b0 <= a ? b0 + 24 : b0) - a; }
 function legalBreak(span){ return span > 8 ? 1 : span > 6 ? 0.75 : 0; }
@@ -1530,7 +1533,7 @@ function renderExport(){
   h += `<p class="${ck.noId.length ? 'exNg' : 'exOk'}">${ck.noId.length ? '▲' : '●'} 職員IDが未入力の職員：<b>${ck.noId.length}名</b>${ck.noId.length ? `（${esc(ck.noId.slice(0, 6).join('、'))}${ck.noId.length > 6 ? ' ほか' : ''}）　<button data-ex="gomaster">⑦ 職員台帳で入力する</button>` : ''}</p>`;
   h += bad ? `<p class="exWarn">この状態で出力すると、取込先の勤怠システムでエラーになる可能性があります。出力自体は止めません。</p>` : `<p class="exOk">問題は見つかりませんでした。</p>`;
   h += `</div><h4>出力内容の確認（${S.y}年${S.m}月）</h4><div class="card"><p>出力行数：<b>${r.count}行</b>（1行＝職員×日）　対象職員：<b>${r.staffCount}名</b></p>
-  <table class="t exSum"><tr><th>記号</th>${Object.keys(r.bySym).map(k => `<th>${esc(k)}</th>`).join('')}</tr><tr><th>件数</th>${Object.keys(r.bySym).map(k => `<td>${r.bySym[k]}</td>`).join('')}</tr></table></div>`;
+  <div style="overflow-x:auto;max-width:100%"><table class="t exSum"><tr><th>記号</th>${Object.keys(r.bySym).map(k => `<th>${esc(k)}</th>`).join('')}</tr><tr><th>件数</th>${Object.keys(r.bySym).map(k => `<td>${r.bySym[k]}</td>`).join('')}</tr></table></div></div>`;
   h += `<h4>勤怠向け一覧CSV</h4><div class="card"><p class="note"><b>取込先（勤怠システム）の正式な形式は未確認です。</b>ここで出すのは汎用の一覧形式で、そのまま取り込める保証はありません。取込先の形式が確定したら、列・文字コードを合わせます。文字コードは <b>UTF-8（BOM付き）</b>でExcelで開けます。ブラウザ内でShift_JISへの変換はできません。</p>
   <p><b>列（チェックで選択、◀▶で並べ替え）</b></p><div class="exCols">`;
   const all = EXP.cols.concat(EXP_DEFAULT_COLS.filter(k => !EXP.cols.includes(k)));
@@ -1580,7 +1583,7 @@ $('#bImport').onclick = () => {
     if (S && !confirm('現在の保存データを置き換えます。よろしいですか？')) return;
     S = next; save(); curSec = 'all'; if (typeof renderMonthBox === 'function') renderMonthBox();
     const au = unitsOf(S).map(u => `${u.key}(${u.staff.length}名)`).join('、');
-    $('#importMsg').textContent = `取込完了：${S.y}年${S.m}月・${S.sections.length}部署・${S.staff.length}名。自動作成の対象：${au || 'なし'}`;
+    $('#importMsg').textContent = `取込完了：${S.y}年${S.m}月・${S.sections.length}部署・${S.staff.length}名。自動作成の対象：${au || 'なし'}` + (S.importNotes && S.importNotes.length ? `（注意：${S.importNotes.join('／')}）` : '');
     setStatus('');
   } catch (e) { $('#importMsg').textContent = '取込できません：' + e.message; }
 };
@@ -1852,7 +1855,7 @@ document.addEventListener('click', e => {
     box = document.createElement('div'); box.id = 'authBox';
     box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--surface,#fff);border-top:1px solid var(--line,#cfe0ef);padding:4px 12px;font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--fg,#1f2a44)';
     box.innerHTML = '<span id="srvRole"></span><label>月：<select id="srvMonth"></select></label><span id="srvState" aria-live="polite"></span><span id="srvAct"></span><span style="flex:1"></span><button id="srvPw" type="button">パスワード変更</button><button id="srvOut" type="button">ログアウト</button>';
-    q('#srvPw').onclick = () => { pwDialog(false); };
+    box.querySelector('#srvPw').onclick = () => { pwDialog(false); };
     document.body.appendChild(box); document.body.style.paddingBottom = '40px';
     q('#srvMonth').onchange = async e => { await switchMonth(e.target.value); };
     q('#srvOut').onclick = async () => {
