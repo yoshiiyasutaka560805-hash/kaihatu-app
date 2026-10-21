@@ -5,6 +5,10 @@ import { useAction, useApi } from '../hooks/useApi';
 import { Badge, Card, ErrorText, Loading, PageHeader, yen, WAGE_LABEL } from '../components/ui';
 import { SOURCE_LABEL } from './PostingDetail';
 
+const PAGE_SIZE = 100;
+const KIND_OPTIONS = ['介護職', '看護職', '生活相談員', 'ケアマネ', '機能訓練', 'その他'];
+const FACILITY_OPTIONS = ['特養', '老健', '介護医療院', 'GH', '有料', 'サ高住', 'デイ', '訪問', '小多機', '障害', '病院', '保育', 'その他', '未分類'];
+const EMPLOYMENT_OPTIONS = ['正社員', '契約社員', 'パート', '派遣', '業務委託'];
 const TABS = [['', 'すべて'], ['hw', 'HW求人'], ['web', 'ネット求人'], ['own', '自社受理求人']];
 
 function wageText(p) {
@@ -163,12 +167,22 @@ export default function Postings() {
   const [city, setCity] = useState('');
   const [all, setAll] = useState(false);
   const [applied, setApplied] = useState({ q: '', city: '' });
+  const [kind, setKind] = useState('');
+  const [facility, setFacility] = useState('');
+  const [employment, setEmployment] = useState('');
+  const [sort, setSort] = useState('new');
+  const [page, setPage] = useState(0);
   const qId = useId(); const cityId = useId();
-  const list = useApi(() => get('/postings', { origin, q: applied.q, city: applied.city, active: all ? 'all' : undefined }),
-    [origin, applied.q, applied.city, all]);
+  const filters = { origin, q: applied.q, city: applied.city, active: all ? 'all' : undefined, kind, facility, employment };
+  const deps = [origin, applied.q, applied.city, all, kind, facility, employment];
+  const list = useApi(() => get('/postings', { ...filters, sort, limit: PAGE_SIZE, offset: page * PAGE_SIZE }), [...deps, sort, page]);
+  const count = useApi(() => get('/postings/count', filters), deps);
   const runs = useApi(() => get('/postings/runs'), []);
-  const reloadAll = () => { list.reload(); runs.reload(); };
-  const search = e => { e.preventDefault(); setApplied({ q: q.trim(), city: city.trim() }); };
+  const reloadAll = () => { list.reload(); count.reload(); runs.reload(); };
+  const search = e => { e.preventDefault(); setPage(0); setApplied({ q: q.trim(), city: city.trim() }); };
+  const pick = setter => e => { setPage(0); setter(e.target.value); };
+  const total = count.data?.total ?? null;
+  const pages = total == null ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <>
@@ -178,7 +192,7 @@ export default function Postings() {
       <Card>
         <div className="tabs" role="tablist">
           {TABS.map(([v, l]) => (
-            <button type="button" role="tab" aria-selected={origin === v} key={v} className={origin === v ? 'active' : ''} onClick={() => setOrigin(v)}>{l}</button>
+            <button type="button" role="tab" aria-selected={origin === v} key={v} className={origin === v ? 'active' : ''} onClick={() => { setPage(0); setOrigin(v); }}>{l}</button>
           ))}
         </div>
         <form className="row" onSubmit={search} style={{ marginBottom: 12 }}>
@@ -188,11 +202,27 @@ export default function Postings() {
           <input id={cityId} className="form-input" style={{ maxWidth: 160 }} value={city} onChange={e => setCity(e.target.value)} />
           <button type="submit" className="btn btn-primary btn-sm">絞込</button>
           <label className="checkbox" style={{ margin: 0 }}>
-            <input type="checkbox" checked={all} onChange={e => setAll(e.target.checked)} />無効・募集終了も表示
+            <input type="checkbox" checked={all} onChange={e => { setPage(0); setAll(e.target.checked); }} />無効・募集終了も表示
           </label>
-          <span className="spacer" />
-          {list.data && <span className="muted">{list.data.length}件{list.data.length >= 1000 ? '（上限1000件まで表示）' : ''}</span>}
         </form>
+        <div className="row" style={{ marginBottom: 12 }}>
+          <select className="form-select" style={{ maxWidth: 130 }} aria-label="職種" value={kind} onChange={pick(setKind)}>
+            <option value="">職種：すべて</option>{KIND_OPTIONS.map(k => <option key={k} value={k}>{k}</option>)}
+          </select>
+          <select className="form-select" style={{ maxWidth: 150 }} aria-label="施設種別" value={facility} onChange={pick(setFacility)}>
+            <option value="">施設：すべて</option>{FACILITY_OPTIONS.map(k => <option key={k} value={k}>{k}</option>)}
+          </select>
+          <select className="form-select" style={{ maxWidth: 160 }} aria-label="雇用形態" value={employment} onChange={pick(setEmployment)}>
+            <option value="">雇用形態：すべて</option>{EMPLOYMENT_OPTIONS.map(k => <option key={k} value={k}>{k}</option>)}
+          </select>
+          <select className="form-select" style={{ maxWidth: 170 }} aria-label="並び順" value={sort} onChange={pick(setSort)}>
+            <option value="new">新しい順</option><option value="wage">給与の高い順（月額換算）</option><option value="city">市区町村順</option>
+          </select>
+          <span className="spacer" />
+          {total != null && <span className="muted">{total.toLocaleString()}件中 {total ? page * PAGE_SIZE + 1 : 0}〜{Math.min(total, (page + 1) * PAGE_SIZE)}件</span>}
+          <button type="button" className="btn btn-outline btn-sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>前へ</button>
+          <button type="button" className="btn btn-outline btn-sm" disabled={page + 1 >= pages} onClick={() => setPage(p => p + 1)}>次へ</button>
+        </div>
         <ErrorText error={list.error} />
         {list.loading && !list.data ? <Loading /> : list.data && !list.data.length ? <div className="muted">該当する求人はありません。</div> : list.data && (
           <div style={{ overflowX: 'auto' }}>
@@ -204,13 +234,13 @@ export default function Postings() {
               <tbody>
                 {list.data.map(p => (
                   <tr key={p.id}>
-                    <td><Link to={`/postings/${p.id}`}>{p.posting_no}</Link>
+                    <td style={{ whiteSpace: 'nowrap' }}><Link to={`/postings/${p.id}`}>{p.posting_no}</Link>
                       {p.hw_posting_no && <div className="muted">元HW {p.hw_posting_no}</div>}</td>
                     <td>{p.origin === 'own' ? <Badge color="green">自社</Badge> : p.origin === 'web' ? <Badge color="yellow">ネット</Badge> : <Badge color="blue">HW</Badge>}</td>
-                    <td>{p.company_name}</td>
-                    <td>{p.job_title}</td>
+                    <td style={{ minWidth: 200 }}>{p.company_name}</td>
+                    <td style={{ minWidth: 110 }}>{p.job_title}{p.required_licenses && <div className="muted">必須：{p.required_licenses}</div>}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{p.facility_type || '—'}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{p.city || p.prefecture || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{p.city || p.prefecture || '—'}{p.nearest_station && <div className="muted">{p.nearest_station}</div>}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{p.employment_type || '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{wageText(p)}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{p.expiry_date || '—'}</td>

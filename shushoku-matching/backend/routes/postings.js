@@ -23,20 +23,46 @@ function load(id) {
   return p;
 }
 
-router.get('/', (req, res) => {
+// 一覧の絞込条件（一覧と件数で共通）
+function listFilter(query) {
   const where = [];
   const params = {};
-  if (req.query.active !== 'all') where.push('is_active = 1');
-  if (req.query.origin) { where.push('origin = @origin'); params.origin = req.query.origin; }
-  if (req.query.employerId) { where.push('employer_id = @eid'); params.eid = req.query.employerId; }
-  if (req.query.q) {
-    where.push('(company_name LIKE @q OR job_title LIKE @q OR job_category LIKE @q OR posting_no LIKE @q OR facility_type LIKE @q)');
-    params.q = `%${req.query.q}%`;
+  if (query.active !== 'all') where.push('is_active = 1');
+  if (query.origin) { where.push('origin = @origin'); params.origin = query.origin; }
+  if (query.employerId) { where.push('employer_id = @eid'); params.eid = query.employerId; }
+  if (query.q) {
+    where.push('(company_name LIKE @q OR job_title LIKE @q OR job_category LIKE @q OR posting_no LIKE @q OR facility_type LIKE @q OR description LIKE @q)');
+    params.q = `%${query.q}%`;
   }
-  if (req.query.city) { where.push('city LIKE @city'); params.city = `%${req.query.city}%`; }
+  if (query.city) { where.push('city LIKE @city'); params.city = `%${query.city}%`; }
+  if (query.kind) { where.push('(job_kind = @kind OR job_category LIKE @kindLike)'); params.kind = query.kind; params.kindLike = `%${query.kind.replace(/職$/, '')}%`; }
+  if (query.facility) {
+    if (query.facility === '未分類') where.push('facility_type IS NULL');
+    else { where.push('facility_type = @facility'); params.facility = query.facility; }
+  }
+  if (query.employment) { where.push('employment_type LIKE @emp'); params.emp = `%${query.employment}%`; }
+  return { sql: where.length ? 'WHERE ' + where.join(' AND ') : '', params };
+}
+
+const SORTS = {
+  new: 'fetched_at DESC, id DESC',
+  wage: "CASE wage_type WHEN 'hourly' THEN wage_min * 160 WHEN 'daily' THEN wage_min * 20 WHEN 'annual' THEN wage_min / 12 ELSE wage_min END DESC NULLS LAST, id",
+  city: 'city, company_name, id',
+};
+
+router.get('/', (req, res) => {
+  const { sql, params } = listFilter(req.query);
+  const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit, 10) || 1000));
+  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
   res.json(getDb().prepare(`SELECT id, posting_no, origin, employer_id, company_name, prefecture, city, job_title, facility_type,
-    employment_type, wage_type, wage_min, wage_max, expiry_date, received_date, source, source_file, source_url, is_active, closed_manually, hw_posting_no
-    FROM job_postings ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY fetched_at DESC LIMIT 1000`).all(params));
+    employment_type, wage_type, wage_min, wage_max, expiry_date, received_date, source, source_file, source_url, is_active, closed_manually, hw_posting_no,
+    nearest_station, required_licenses
+    FROM job_postings ${sql} ORDER BY ${SORTS[req.query.sort] || SORTS.new} LIMIT ${limit} OFFSET ${offset}`).all(params));
+});
+
+router.get('/count', (req, res) => {
+  const { sql, params } = listFilter(req.query);
+  res.json(getDb().prepare(`SELECT COUNT(*) AS total FROM job_postings ${sql}`).get(params));
 });
 
 router.get('/runs', (req, res) => {

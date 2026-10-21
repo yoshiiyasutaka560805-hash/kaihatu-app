@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // 取得系の共通フック：const { data, error, loading, reload } = useApi(() => get('/seekers'), [deps])
+// 条件を続けて変えたとき、古いリクエストの応答が後から届いても新しい結果を上書きしない
 export function useApi(fn, deps = []) {
   const [state, setState] = useState({ data: null, error: '', loading: true });
+  const seq = useRef(0);
   const load = useCallback(() => {
+    const my = ++seq.current;
     setState(s => ({ ...s, loading: true }));
     return Promise.resolve(fn())
-      .then(data => setState({ data, error: '', loading: false }))
-      .catch(e => setState({ data: null, error: e.message, loading: false }));
+      .then(data => { if (my === seq.current) setState({ data, error: '', loading: false }); })
+      .catch(e => { if (my === seq.current) setState({ data: null, error: e.message, loading: false }); });
   }, deps); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
   return { ...state, reload: load };

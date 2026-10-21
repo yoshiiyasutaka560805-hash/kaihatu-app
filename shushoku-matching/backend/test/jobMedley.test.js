@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { stop } = require('./helpers');
+const { stop, api } = require('./helpers');
 const { getDb } = require('../database/db');
 const jm = require('../services/sources/jobMedleyImport');
 const { importCsvBuffer } = require('../services/sources/manualImport');
@@ -48,4 +48,12 @@ test('ジョブメドレーCSV：ネット求人として取込・再取込で�
   assert.equal(p.wage_min, 250000);
   assert.ok(p.expiry_date);
   assert.equal(importCsvBuffer(Buffer.from(csv), 'jm.csv').updated, 1);
+});
+
+test('求人一覧：職種・施設・雇用形態で絞込、件数と並び替え', async () => {
+  const r = await api('GET', '/api/postings?origin=web&kind=' + encodeURIComponent('介護職') + '&facility=' + encodeURIComponent('特養') + '&employment=' + encodeURIComponent('正社員') + '&sort=wage&limit=10');
+  assert.equal(r.status, 200);
+  assert.ok(r.body.length >= 1 && r.body.every(p => p.facility_type === '特養'));
+  const c = await api('GET', '/api/postings/count?origin=web&facility=' + encodeURIComponent('特養'));
+  assert.ok(c.body.total >= r.body.length);
 });
