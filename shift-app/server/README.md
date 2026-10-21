@@ -14,9 +14,14 @@
 | role | 表示 | 閲覧 | 更新 |
 |---|---|---|---|
 | `admin` | システム管理者 | 全部署 | 全部署 |
+| `editor` | 編集者（作成関係者・約10名） | 全部署 | 全部署（監査ログ閲覧は不可） |
 | `manager1` | 管理者(Ⅰ) | 全部署 | 自グループのみ |
 | `manager2` | 管理者(Ⅱ) | 自グループのみ | 自グループのみ |
 | `staff` | 一般職員 | 自グループのみ | 不可（403） |
+
+**運用の想定**：サーバーを使うのは作成関係者 約10名のみ（推奨：全員 `editor`、施設長＝`admin`）。全職員はログインせず、確定後に出力したファイル（閲覧用HTML・印刷・Excel）を受け取ります。
+
+**確定（ロック）**：`POST /api/month/:ym/finalize` / `unfinalize`。確定済みの月は `PUT` が 423 で拒否されます。実行できるのは `admin` と、`users.json` の権限フラグ `canFinalize` を持つユーザーのみ（`adduser.js --grant finalize <ID>` / `--revoke finalize <ID>`、`--list` に `[確定権限]` 表示、`GET /api/me` に `canFinalize`）。確定時に下書きのバックアップを1世代作成し、監査ログに記録します（勤務内容は記録しない）。`GET /api/month/:ym/version` は版番号・保存者の職員ID・時刻・確定状態だけを返す軽量エンドポイントで、画面が30秒ごとに他の人の保存を検知するために使います。
 
 権限判定は**すべてサーバー側**で行います（閲覧は部署単位でデータ自体を除外、更新は許可部署の職員・必要人数だけを既存データへマージ）。
 管理者が更新できるのは `sections` / `staff` / `needs` / `minNeeds` の自部署分のみです。祝日・記号マスタなど月全体の共通設定は、システム管理者（または月の新規作成時）だけが変更できます。部署名の一致で判定するため、ユーザーのグループ名は勤務表の部署名と完全一致させてください。
@@ -30,9 +35,10 @@ node shift-app/server/adduser.js admin01 "システム管理者" admin "*"
 node shift-app/server/server.js
 # 3) ブラウザで http://127.0.0.1:8443/ を開きログイン → 「取込」で勤務表を貼り付け、または「架空データで試す」
 # 4) 他のユーザー
-node shift-app/server/adduser.js k.tanaka "（氏名）" manager1 "2階,3階"
+node shift-app/server/adduser.js k.tanaka "（氏名）" editor "*"          # 作成関係者（全部署を編集）
+node shift-app/server/adduser.js --grant finalize k.tanaka             # 確定できる人（設定で付け外し）
+node shift-app/server/adduser.js k.tanaka2 "（氏名）" manager1 "2階,3階"
 node shift-app/server/adduser.js y.sato  "（氏名）" manager2 "2階"
-node shift-app/server/adduser.js g.suzuki "（氏名）" staff    "2階"
 node shift-app/server/adduser.js --passwd k.tanaka     # 再発行（ランダム表示。既存ログインは失効）
 node shift-app/server/adduser.js --disable g.suzuki    # 退職者・異動者は無効化（ログイン中でも即失効）
 node shift-app/server/adduser.js --list

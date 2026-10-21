@@ -19,7 +19,7 @@ header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:4px;ba
 .logo svg{width:28px;height:28px}
 header h1{font-size:19px;margin:0;font-weight:800;line-height:1.25;letter-spacing:.06em;display:flex;flex-direction:column}
 header h1 small{order:-1;font-size:12px;letter-spacing:.2em;font-weight:700;color:#075bb5}
-.hbtns{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.maskLb{font-size:12px;font-weight:600;color:#33435c;white-space:nowrap}.hbtns{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 #hdArt{margin-left:auto;display:flex;align-items:center;max-height:60px}
 button,select{font:inherit;font-weight:600;letter-spacing:.04em;padding:8px 16px;border:2px solid #b9cde0;background:var(--surface);color:var(--fg);border-radius:var(--r-s);cursor:pointer;box-shadow:var(--sh-s)}
 select{padding:6px 10px;font-weight:500}
@@ -182,6 +182,7 @@ table.t input[type=number]{width:56px}
   <button id="bCopy" class="b-sky">Excel用にコピー</button>
   <button id="bPrint" class="b-lav">印刷</button>
   <button id="bView" class="b-sun">閲覧用ファイルを保存</button>
+  <label class="maskLb" title="配布用の出力（Excel用コピー・閲覧用ファイル・勤怠CSV）で、休暇の種類をどこまで伏せるか">休暇の伏せ方：<select id="maskSel"><option value="sensitive">機微なものだけ伏せる</option><option value="all">すべての休暇を伏せる</option><option value="none">伏せない</option></select></label>
   </div>
   <span id="status" class="note"></span>
   <div id="hdArt"></div>
@@ -1065,7 +1066,8 @@ function calcFte(S){
 }
 
 // Excelへ貼り戻す形式
-function toTSV(S){
+function toTSV(S, policy){
+  S = maskedState(S, policy);
   const di = dayInfo(S), DOW = '日月火水木金土', lines = [];
   lines.push(`令和${S.y - 2018}年${S.m}月度\t勤務予定表`);
   for (const sec of S.sections){
@@ -1082,6 +1084,62 @@ function toTSV(S){
   }
   return lines.join('\n');
 }
+
+// ---- 配布用：休暇の種類を伏せる（純粋関数。policy: 'sensitive'=機微なものだけ（既定） / 'all'=すべての休暇 / 'none'=伏せない）----
+const MASK_LABELS = { sensitive: '機微なものだけ伏せる（欠勤・産休・忌引・休職など→「休」）', all: 'すべての休暇を伏せる（有休なども→「休」）', none: '伏せない' };
+const MASK_SYM = '休';
+const SENSITIVE_LEAVE = new Set(['欠', '欠勤', '産休', '忌引', '公(忌引)', '休職', '育休', '育児休業', '介護休', '介護休暇', '病休', '病欠', '傷病', '労災', '看護休', '生理休暇', '産前', '産後']);
+function normMask(p){ return p === 'all' || p === 'none' ? p : 'sensitive'; }
+function maskSymbol(v, policy){
+  policy = normMask(policy);
+  if (policy === 'none' || !v) return v;
+  if (SENSITIVE_LEAVE.has(v)) return MASK_SYM;
+  if (policy === 'all' && (LEAVE.has(v) || ['年休', '有給', '夏休', '冬休'].includes(v))) return MASK_SYM;
+  return v;
+}
+// 伏せ字を適用した複製を返す（'none' は元の S をそのまま返す）。伏せた記号の色・名称・時間・希望の入力内容は複製から除く
+function maskedState(S, policy){
+  policy = normMask(policy);
+  if (policy === 'none' || !S) return S;
+  const o = JSON.parse(JSON.stringify(S)), gone = new Set();
+  const all = new Set(Object.keys(o.colors || {}).concat(o.shiftList || [], o.staff.flatMap(t => t.cells)));
+  for (const k of all) if (k && maskSymbol(k, policy) !== k) gone.add(k);
+  for (const t of o.staff){
+    t.cells = t.cells.map(c => maskSymbol(c, policy));
+    if (t.req) t.req = t.req.map(r => (r && gone.has(r) ? MASK_SYM : r));
+  }
+  if (gone.size){
+    o.colors = o.colors || {};
+    if (!o.colors[MASK_SYM]){ const l = o.colors['有休'] || {}; o.colors[MASK_SYM] = { bg: l.bg || '#fff3a3', fg: l.fg || '', name: '休み（休暇）', code: '' }; }
+    for (const k of gone){ delete o.colors[k]; if (o.fte && o.fte.hours) delete o.fte.hours[k]; }
+    o.shiftList = (o.shiftList || []).filter(k => !gone.has(k)).concat(o.shiftList && o.shiftList.includes(MASK_SYM) ? [] : [MASK_SYM]);
+  }
+  return o;
+}
+// 閲覧用HTML（単体ファイル・スクリプトなし）。opt: { policy, finalized: {at}|null, createdAt: '表示用の日時文字列' }
+function buildViewHtml(S, opt){
+  opt = opt || {}; const M = maskedState(S, opt.policy), di = dayInfo(M), DOW = '日月火水木金土';
+  const e = x => String(x == null ? '' : x).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const col = c => (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : '');
+  const sty = v => { const c = M.colors && M.colors[v]; if (!c) return ''; const b = col(c.bg), f = col(c.fg); return b || f ? ` style="${b ? 'background:' + b + ';' : ''}${f ? 'color:' + f + ';' : ''}"` : ''; };
+  const fin = opt.finalized;
+  const badge = fin ? `<span class="bd fin">確定版${fin.at ? '（' + e(new Date(fin.at).toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })) + ' 確定）' : ''}</span>` : '<span class="bd drf">下書き（未確定）</span>';
+  const hol = new Set(M.holidays || []);
+  let t = '<table><thead><tr><th class="nm">氏名</th>' + di.wd.slice(0, M.D).map((w, d) => `<th class="${w === 6 ? 'w6' : w === 0 || hol.has(d + 1) ? 'w0' : ''}">${d + 1}<br>${DOW[w]}</th>`).join('') + '<th>公休</th></tr></thead>';
+  for (const sec of M.sections){
+    const rows = M.staff.filter(z => z.sec === sec.id); if (!rows.length) continue;
+    t += `<tbody><tr><th colspan="${M.D + 2}" class="sec">${e(sec.title)}</th></tr>`;
+    for (const x of rows)
+      t += `<tr><td class="nm">${e(x.label)} ${e(x.name)}</td>` + x.cells.slice(0, M.D).map(v => `<td${sty(v)}>${e(v)}</td>`).join('') + `<td class="sum">${x.cells.filter(c => c === '公').length}</td></tr>`;
+    t += '</tbody>';
+  }
+  t += '</table>';
+  const used = [...new Set(M.staff.flatMap(x => x.cells).filter(Boolean))].filter(k => M.colors && M.colors[k]);
+  const legend = used.map(k => { const c = M.colors[k], h = M.fte && M.fte.hours && M.fte.hours[k]; return `<span><b${sty(k)}>${e(k)}</b>${e(c.name || '')}${h && h.s && h.e ? ' ' + e(h.s) + '〜' + e(h.e) : ''}</span>`; }).join('');
+  const css = ':root{color-scheme:light}*{box-sizing:border-box}body{margin:0;padding:16px;font:13px/1.5 "Hiragino Sans","Yu Gothic UI",Meiryo,sans-serif;background:#fff;color:#1f2a44}h1{font-size:18px;margin:0 0 4px}.bd{display:inline-block;padding:1px 10px;border-radius:999px;font-size:12px;font-weight:700;margin-left:8px;vertical-align:2px}.fin{background:#d7f6e8;color:#075f48}.drf{background:#ffe3e1;color:#a3262d}.meta{color:#4a5870;font-size:12px;margin:0 0 10px}.wrap{overflow:auto;border:1px solid #cfe0ef;border-radius:10px}table{border-collapse:collapse;font-size:12px}th,td{border:1px solid #c9ced8;min-width:28px;text-align:center;height:24px;padding:0 2px;white-space:nowrap}th{background:#dcefff;position:sticky;top:0}td.nm,th.nm{position:sticky;left:0;background:#fff;text-align:left;padding:0 8px;min-width:120px;z-index:1}th.nm{background:#dcefff;z-index:2}th.sec{background:#dff5ea;text-align:left;padding:0 8px}th.w6{color:#1259b8}th.w0{color:#c5221f}td.sum{background:#f4f9ff;color:#4a5870}.lg{display:flex;flex-wrap:wrap;gap:6px 10px;margin:12px 0}.lg span{display:inline-flex;align-items:center;gap:5px;border:1px solid #cfe0ef;border-radius:999px;padding:2px 10px 2px 3px}.lg b{min-width:30px;text-align:center;border-radius:999px;padding:1px 6px;border:1px solid #0002}footer{margin-top:14px;padding:8px 12px;border:1px solid #f2b1ac;background:#fff5f4;border-radius:8px;color:#8a1f1a;font-size:12px}@media print{@page{size:A4 landscape;margin:10mm}body{padding:0}.wrap{overflow:visible;border:0}th,td{height:20px;font-size:10px;min-width:20px}th{position:static}td.nm,th.nm{position:static;min-width:90px}tbody{break-inside:avoid}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}';
+  const note = normMask(opt.policy) === 'none' ? '' : '<br>※ 休暇の種類の一部は「休」と表示しています。';
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><meta name="robots" content="noindex,nofollow"><title>勤務表 ${M.y}年${M.m}月（閲覧用）</title><style>${css}</style></head><body><h1>勤務表 ${M.y}年${M.m}月${badge}</h1><p class="meta">閲覧専用／作成：${e(opt.createdAt || '')}${note}</p><div class="wrap">${t}</div><div class="lg"><b style="border:0">凡例：</b>${legend}</div><footer>この表には職員の氏名・勤務・休暇などの個人情報が含まれます。<b>社内限定です。持ち出し・撮影・社外への送付・転送は禁止</b>します。不要になったファイルは速やかに削除してください。</footer></body></html>`;
+}
 //#ENGINE-END
 
 // ---------------- 画面 ----------------
@@ -1090,7 +1148,9 @@ let S = null, curSec = 'all', issues = [];
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-const SRV = { on: false, ym: null, version: 0, dirty: false, busy: false, timer: null, conflict: false, readonly: false, user: null, writable: [] };
+const MASK = { policy: 'sensitive' }; // 配布用出力の休暇の伏せ方（端末ごとに記憶）
+try { const v = localStorage.getItem('shiftapp:mask'); if (v) MASK.policy = normMask(v); } catch (e) {}
+const SRV = { finalized: null, on: false, ym: null, version: 0, dirty: false, busy: false, timer: null, conflict: false, readonly: false, user: null, writable: [] };
 function save(){ if (SRV.on){ if (typeof srvSchedule === 'function') srvSchedule(); return; } try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 function load(src){ try { const j = src !== undefined ? src : localStorage.getItem(KEY); if (j){ S = JSON.parse(j); if (!S.colors){ S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); } S.fte = S.fte || defaultFte(); migrateFteHours(S); { const sn = new Set(); S.staff.forEach(t => { initExtras(t, S); initFte(t, S, sn); }); } if (!S.minNeeds) S.minNeeds = JSON.parse(JSON.stringify(S.needs)); if (S.reqLimit === undefined) S.reqLimit = 2; if (!S.colors){ S.colors = defaultColors(); S.shiftList = Object.keys(DEFAULT_COLORS); } if (!S.extraHol) S.extraHol = []; } } catch (e) { S = null; } }
 
@@ -1577,7 +1637,7 @@ function expHM(x){ const h = Math.floor(x + 1e-9) % 24, m = Math.round((x - Math
 function expRound(x){ return String(Math.round(x * 100) / 100); }
 // 職員×日の行を作る（空欄の日は出さない。opt.koukyu === false なら公休「公」も出さない）
 function buildAttendanceRows(S, opt){
-  opt = opt || {}; const rows = [];
+  opt = opt || {}; const rows = []; S = maskedState(S, opt.mask); // 配布用の伏せ字（既定は無加工。画面側は MASK.policy を渡す）
   for (const t of S.staff){
     const dept = (S.sections.find(x => x.id === t.sec) || {}).title || '';
     for (let d = 0; d < S.D; d++){
@@ -1604,15 +1664,16 @@ function buildAttendanceCsv(S, opt){
   return { header, lines, csv, bom: '﻿' + csv, count: rows.length, staffCount: st.size, bySym };
 }
 // パターンコード対応表（記号→コード→名称→時間）
-function buildCodeTable(S){
+function buildCodeTable(S, policy){
+  S = maskedState(S, policy);
   const used = {}; S.staff.forEach(t => t.cells.forEach(c => { if (c) used[c] = (used[c] || 0) + 1; }));
   const syms = [...new Set(Object.keys(used).concat(S.shiftList))];
   return syms.map(k => { const c = (S.colors && S.colors[k]) || {}, sp = shiftSpan(k, S), n = used[k] || 0;
     return { sym: k, code: c.code || expCodeOf(k), name: c.name || k, start: sp ? expHM(sp.s) : '', end: sp ? expHM(sp.e) : '', brk: sp ? expRound(sp.brk) : '', work: sp ? expRound(sp.work) : '', used: n }; });
 }
-function buildCodeCsv(S){
+function buildCodeCsv(S, policy){
   const L = [['記号', 'パターンコード', 'パターン名', '始業', '終業', '休憩(h)', '実働(h)', '今月の使用数']];
-  buildCodeTable(S).forEach(r => L.push([r.sym, r.code, r.name, r.start, r.end, r.brk, r.work, r.used]));
+  buildCodeTable(S, policy).forEach(r => L.push([r.sym, r.code, r.name, r.start, r.end, r.brk, r.work, r.used]));
   return L.map(a => a.map(expCsvCell).join(',')).join('\r\n') + '\r\n';
 }
 // 出力前チェック（警告のみ。出力はブロックしない）
@@ -1628,9 +1689,9 @@ const EXP = { cols: EXP_DEFAULT_COLS.slice(), koukyu: true, text: '' };
 function renderExport(){
   const p = $('#p-export');
   if (!S){ p.innerHTML = emptyState('export'); return; }
-  const opt = { cols: EXP.cols, koukyu: EXP.koukyu }, r = buildAttendanceCsv(S, opt), ck = exportCheck(S, opt), tb = buildCodeTable(S);
+  const opt = { cols: EXP.cols, koukyu: EXP.koukyu, mask: MASK.policy }, r = buildAttendanceCsv(S, opt), ck = exportCheck(S, opt), tb = buildCodeTable(S, MASK.policy);
   const noC = Object.keys(ck.noCode), bad = ck.errs || noC.length || ck.noId.length;
-  let h = `<h4>出力前チェック</h4><div class="card exCheck">`;
+  let h = `<h4>配布用の伏せ字（全職員へ配るファイル向け）</h4><div class="card"><p>休暇の伏せ方：<select id="exMask"><option value="sensitive">機微なものだけ伏せる（既定）</option><option value="all">すべての休暇を伏せる</option><option value="none">伏せない</option></select></p><p class="note">「Excel用にコピー」「閲覧用ファイルを保存」「勤怠向けCSV」「パターンコード対応表」に反映されます。<b>機微なもの</b>＝欠勤・産休・忌引・休職など（「休」と表示）。有休・リ休・誕休・研修などはそのまま表示します。選択はこの端末に記憶されます。</p></div><h4>出力前チェック</h4><div class="card exCheck">`;
   h += `<p class="${ck.errs ? 'exNg' : 'exOk'}">${ck.errs ? '▲' : '●'} 勤務表のエラー：<b>${ck.errs}件</b>${ck.errs ? '（「⑤ 勤務表」で確認してください）' : ''}${ck.warns ? `　注意 ${ck.warns}件` : ''}</p>`;
   h += `<p class="${noC.length ? 'exNg' : 'exOk'}">${noC.length ? '▲' : '●'} パターンコード未設定の記号：<b>${noC.length ? noC.map(k => `「${esc(k)}」${ck.noCode[k]}件`).join('、') : 'なし'}</b>${noC.length ? '　<button data-ex="gomaster">⑦ マスタ・台帳で設定する</button>' : ''}</p>`;
   h += `<p class="${ck.noId.length ? 'exNg' : 'exOk'}">${ck.noId.length ? '▲' : '●'} 職員IDが未入力の職員：<b>${ck.noId.length}名</b>${ck.noId.length ? `（${esc(ck.noId.slice(0, 6).join('、'))}${ck.noId.length > 6 ? ' ほか' : ''}）　<button data-ex="gomaster">⑦ 職員台帳で入力する</button>` : ''}</p>`;
@@ -1651,6 +1712,7 @@ function renderExport(){
   tb.forEach(x => { h += `<tr${!x.code && x.used ? ' class="exRow"' : ''}><td><b>${esc(x.sym)}</b></td><td class="${x.code ? '' : 'exRed'}">${x.code ? esc(x.code) : (x.used ? '未設定！' : '未設定')}</td><td>${esc(x.name)}</td><td>${x.start}</td><td>${x.end}</td><td>${x.brk}</td><td>${x.work}</td><td>${x.used || ''}</td></tr>`; });
   p.innerHTML = h + '</table></div></div>' + (typeof e3outCard === 'function' ? e3outCard() : '');
   EXP.text = r.bom;
+  const em = $('#exMask'); if (em) em.value = MASK.policy;
 }
 function expDownload(name, text){
   try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); return true; } catch (e) { return false; }
@@ -1661,10 +1723,11 @@ async function expCopy(text, ta){
   try { ta.style.display = 'block'; ta.value = text.replace(/^﻿/, ''); ta.focus(); ta.select(); } catch (e) {}
   return false;
 }
+document.addEventListener('change', e => { const t = e.target; if (t && t.id === 'exMask'){ MASK.policy = normMask(t.value); try { localStorage.setItem('shiftapp:mask', MASK.policy); } catch (x) {} $('#maskSel').value = MASK.policy; renderExport(); } });
 document.addEventListener('click', async e => {
   const t = e.target.closest ? e.target.closest('#p-export button, #p-export input') : null; if (!t || !S) return;
   const msg = s => { const m = $('#exMsg'); if (m) m.textContent = s; };
-  const opt = { cols: EXP.cols, koukyu: EXP.koukyu }, fn = `kinmu_${S.y}-${String(S.m).padStart(2, '0')}`;
+  const opt = { cols: EXP.cols, koukyu: EXP.koukyu, mask: MASK.policy }, fn = `kinmu_${S.y}-${String(S.m).padStart(2, '0')}`;
   const ex = t.dataset.ex;
   if (ex === 'gomaster'){ show('master'); return; }
   if (ex === 'col'){ const k = t.dataset.k; if (t.checked){ if (!EXP.cols.includes(k)) EXP.cols.push(k); } else EXP.cols = EXP.cols.filter(x => x !== k); renderExport(); return; }
@@ -1673,8 +1736,8 @@ document.addEventListener('click', async e => {
   if (t.id === 'exDl'){ const r = buildAttendanceCsv(S, opt); msg(expDownload(fn + '.csv', r.bom) ? `${r.count}行をダウンロードしました（UTF-8 BOM付き）。保存されない環境では「画面にプレビュー表示」「コピー」を使ってください。` : 'ダウンロードできませんでした。プレビュー表示またはコピーを使ってください。'); return; }
   if (t.id === 'exPrev'){ const ta = $('#exTa'), r = buildAttendanceCsv(S, opt); ta.style.display = 'block'; ta.value = r.csv; msg(`${r.count}行を表示しました（BOMは画面表示では省略）。`); return; }
   if (t.id === 'exCopy'){ const r = buildAttendanceCsv(S, opt), ta = $('#exTa'); ta.value = r.csv; msg(await expCopy(r.csv, ta) ? `${r.count}行をコピーしました。Excelなどに貼り付けられます。` : 'コピーできませんでした。下の欄を選択済みです。Ctrl+C（Macは⌘C）でコピーしてください。'); return; }
-  if (t.id === 'exCdDl'){ msg(''); expDownload(fn + '_codes.csv', '﻿' + buildCodeCsv(S)); return; }
-  if (t.id === 'exCdCopy'){ const ta = $('#exTa'), c = buildCodeCsv(S); ta.value = c; msg(await expCopy(c, ta) ? 'パターンコード対応表をコピーしました。' : 'コピーできませんでした。上の欄を選択済みです。'); return; }
+  if (t.id === 'exCdDl'){ msg(''); expDownload(fn + '_codes.csv', '﻿' + buildCodeCsv(S, MASK.policy)); return; }
+  if (t.id === 'exCdCopy'){ const ta = $('#exTa'), c = buildCodeCsv(S, MASK.policy); ta.value = c; msg(await expCopy(c, ta) ? 'パターンコード対応表をコピーしました。' : 'コピーできませんでした。上の欄を選択済みです。'); return; }
 });
 // ==== EXPORT-END ====
 // ==== E3OUT-START ====
@@ -2155,28 +2218,22 @@ function runGen(mode){
 }
 $('#bGen').onclick = () => runGen('rebuild');
 $('#bFill').onclick = () => runGen('fill');
+$('#maskSel').value = MASK.policy;
+$('#maskSel').onchange = e => { MASK.policy = normMask(e.target.value); try { localStorage.setItem('shiftapp:mask', MASK.policy); } catch (x) {} const m = $('#exMask'); if (m) m.value = MASK.policy; if ($('#p-export').classList.contains('on')) renderExport(); setStatus('休暇の伏せ方：' + MASK_LABELS[MASK.policy]); };
 $('#bCopy').onclick = async () => {
   if (!S) return;
-  const tsv = toTSV(S);
+  const tsv = toTSV(S, MASK.policy);
   try { await navigator.clipboard.writeText(tsv); setStatus('コピーしました。Excelに貼り付けてください'); }
   catch (e) { const ta = document.createElement('textarea'); ta.value = tsv; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); setStatus('コピーしました'); }
 };
 $('#bView').onclick = () => {
   if (!S) return;
-  const di = dayInfo(S), DOW = '日月火水木金土';
-  let t = '<table><thead><tr><th>氏名</th>' + di.wd.map((w, d) => `<th class="w${w}">${d + 1}<br>${DOW[w]}</th>`).join('') + '</tr></thead><tbody>';
-  for (const sec of S.sections){
-    t += `<tr><th colspan="${S.D + 1}" class="sec">${esc(sec.title)}</th></tr>`;
-    for (const x of S.staff.filter(z => z.sec === sec.id))
-      t += `<tr><td class="nm">${esc(x.label)} ${esc(x.name)}</td>` + x.cells.map(v => `<td class="${cellClass(v)}"${styleOf(v)}>${esc(v)}</td>`).join('') + '</tr>';
-  }
-  t += '</tbody></table>';
-  const css = document.querySelector('style').textContent;
-  const doc = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><meta name="robots" content="noindex,nofollow"><title>勤務表 ${S.y}年${S.m}月（閲覧用）</title><style>${css}table{border-collapse:collapse;font-size:12px}th,td{border:1px solid #c9ced8;min-width:28px;text-align:center;height:22px}td.nm{text-align:left;padding:0 6px;white-space:nowrap}th.sec{background:var(--band);text-align:left}th.w6{color:#1565c0}th.w0{color:#d93025}td.c{cursor:default}</style></head><body><main><h3>勤務表 ${S.y}年${S.m}月（閲覧専用・${new Date().toLocaleString('ja-JP')}作成）</h3>${t}</main></body></html>`.replace(/<td class="(\w+)">/g, '<td class="c $1">');
+  const fin = typeof srvFinalized === 'function' ? srvFinalized() : null;
+  const doc = buildViewHtml(S, { policy: MASK.policy, finalized: fin, createdAt: new Date().toLocaleString('ja-JP') });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([doc], { type: 'text/html' }));
-  a.download = `勤務表_${S.y}-${String(S.m).padStart(2, '0')}_閲覧用.html`;
-  a.click(); setStatus('閲覧用ファイルを保存しました。共有フォルダに置いてください');
+  a.download = `勤務表_${S.y}-${String(S.m).padStart(2, '0')}_${fin ? '確定版' : '下書き'}_閲覧用.html`;
+  a.click(); setStatus('閲覧用ファイルを保存しました（' + (fin ? '確定版' : '下書き') + '・休暇の伏せ方：' + MASK_LABELS[MASK.policy] + '）。共有フォルダの権限を確認して置いてください');
 };
 $('#bPrint').onclick = () => { show('sheet'); window.print(); };
 
@@ -2285,10 +2342,12 @@ document.addEventListener('click', e => {
 // ===== 社内サーバー版（第2段階）：ログイン・サーバー保存。file:// や /api 無しの場合は従来どおり localStorage =====
 (function(){
   const HDR = { 'X-Requested-With': 'shiftapp' };
-  const ROLE_JP = { admin: 'システム管理者', manager1: '管理者(Ⅰ)', manager2: '管理者(Ⅱ)', staff: '一般職員' };
+  const ROLE_JP = { admin: 'システム管理者', editor: '編集者', manager1: '管理者(Ⅰ)', manager2: '管理者(Ⅱ)', staff: '一般職員' };
   const q = s => document.querySelector(s);
   const ymOf = s => s.y + '-' + String(s.m).padStart(2, '0');
   let box = null, months = [], failed = false;
+  const fmtT = iso => { const d = new Date(iso); return isNaN(d) ? '' : (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + String(d.getHours()).padStart(2, '0') + '時' + String(d.getMinutes()).padStart(2, '0') + '分'; };
+  window.srvFinalized = () => (SRV.on && SRV.finalized ? SRV.finalized : null);
 
   async function call(method, url, body){
     const r = await fetch(url, { method, credentials: 'same-origin', headers: body === undefined ? HDR : Object.assign({ 'Content-Type': 'application/json' }, HDR), body: body === undefined ? undefined : JSON.stringify(body) });
@@ -2379,13 +2438,13 @@ document.addEventListener('click', e => {
   }
   function roleText(){
     const u = SRV.user; if (!u) return '';
-    return (ROLE_JP[u.role] || u.role) + '：' + (u.role === 'admin' ? '全部署' : u.groups.join('・')) + '　' + u.name + ' さん';
+    return (ROLE_JP[u.role] || u.role) + '：' + (u.role === 'admin' || u.role === 'editor' ? '全部署' : u.groups.join('・')) + '　' + u.name + ' さん';
   }
   function buildBox(){
     if (box) return;
     box = document.createElement('div'); box.id = 'authBox';
     box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--surface,#fff);border-top:1px solid var(--line,#cfe0ef);padding:4px 12px;font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--fg,#1f2a44)';
-    box.innerHTML = '<span id="srvRole"></span><label>月：<select id="srvMonth"></select></label><span id="srvState" aria-live="polite"></span><span id="srvAct"></span><span style="flex:1"></span><button id="srvPw" type="button">パスワード変更</button><button id="srvOut" type="button">ログアウト</button>';
+    box.innerHTML = '<span id="srvRole"></span><label>月：<select id="srvMonth"></select></label><span id="srvState" aria-live="polite"></span><span id="srvAct"></span><span id="srvNew" role="status"></span><span id="srvFin"></span><span style="flex:1"></span><button id="srvPw" type="button">パスワード変更</button><button id="srvOut" type="button">ログアウト</button>';
     box.querySelector('#srvPw').onclick = () => { pwDialog(false); };
     document.body.appendChild(box); document.body.style.paddingBottom = '40px';
     q('#srvMonth').onchange = async e => { await switchMonth(e.target.value); };
@@ -2395,6 +2454,77 @@ document.addEventListener('click', e => {
       location.reload();
     };
   }
+  // ---- 確定（ロック）の表示と操作 ----
+  const FIN_BTN = 'padding:2px 10px;font-size:12px';
+  function updateFin(){
+    const el = q('#srvFin'); if (!el) return;
+    const f = SRV.finalized, can = SRV.user && SRV.user.canFinalize;
+    el.innerHTML = (f ? '<b style="background:var(--mint-t,#d7f6e8);color:#075f48;border-radius:999px;padding:2px 10px">確定済み（' + esc(fmtT(f.at)) + '・職員ID ' + esc(f.by) + '）</b> ' : '')
+      + (can && SRV.ym ? (f ? '<button type="button" id="srvUnfin" style="' + FIN_BTN + '">確定を解除</button>' : '<button type="button" id="srvFinBtn" class="pri" style="' + FIN_BTN + '">確定する</button>') : '');
+    const b = q('#srvFinBtn'), u = q('#srvUnfin');
+    if (b) b.onclick = finalizeFlow;
+    if (u) u.onclick = unfinalizeFlow;
+  }
+  function modal(html, buttons){
+    return new Promise(resolve => {
+      const old = q('#srvModal'); if (old) old.remove();
+      const ov = document.createElement('div'); ov.id = 'srvModal'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:1002;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px';
+      ov.innerHTML = '<div style="background:var(--surface,#fff);border:1px solid var(--line,#cfe0ef);border-radius:var(--r,16px);box-shadow:var(--sh,0 4px 14px rgba(0,0,0,.15));padding:22px;width:min(440px,100%);color:var(--fg,#1f2a44);max-height:90vh;overflow:auto">' + html
+        + '<div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">' + buttons.map((b, i) => '<button type="button" data-i="' + i + '" class="' + (b.pri ? 'pri' : '') + '">' + b.label + '</button>').join('') + '</div></div>';
+      document.body.appendChild(ov);
+      const done = v => { ov.remove(); resolve(v); };
+      ov.onclick = e => { const b = e.target.closest && e.target.closest('button[data-i]'); if (b) done(buttons[+b.dataset.i].value); };
+      ov.addEventListener('keydown', e => { if (e.key === 'Escape') done(false); });
+      const first = ov.querySelector('button[data-i]:last-child'); if (first) first.focus();
+    });
+  }
+  async function finalizeFlow(){
+    if (!S || SRV.conflict) return state('競合を解消してから確定してください', 'err');
+    if (SRV.dirty || SRV.busy){ await flush(); if (SRV.dirty || SRV.conflict) return state('保存が完了してから確定してください', 'warn'); }
+    const v = validateAll(S), E = v.issues.filter(x => x.sev === 'E').length, W = v.issues.length - E;
+    const warn = E ? '<p class="exWarn" style="background:#fff4e0;border-left:5px solid #f0a400;border-radius:10px;padding:7px 12px"><b>エラーが ' + E + ' 件残っています。</b>確定は止めませんが、「⑤ 勤務表」で内容を確認してからにすることをおすすめします。</p>' : '<p style="color:var(--mint,#0e9f78)">エラーはありません。</p>';
+    const ok = await modal('<h2 style="margin:0 0 6px;font-size:18px">' + S.y + '年' + S.m + '月を確定します</h2><p style="margin:0 0 8px">チェック結果：<span class="tagE">エラー ' + E + '</span> <span class="tagW">注意 ' + W + '</span></p>' + warn
+      + '<p style="font-size:13px;color:var(--muted,#4a5870);margin:8px 0 0">確定すると、この月は<b>編集・保存ができなくなります</b>（確定を解除できるのは確定権限のある人だけです）。確定時に、下書きのバックアップを1つ作成します。<br>確定後は「⑧ 出力」で閲覧用ファイル・Excel用コピー・勤怠CSVを出力し、職員へ配布してください（配る前に「休暇の伏せ方」を確認）。</p>',
+      [{ label: 'キャンセル', value: false }, { label: '確定する', value: true, pri: true }]);
+    if (!ok) return;
+    state('確定中…');
+    try {
+      const r = await call('POST', '/api/month/' + SRV.ym + '/finalize', { version: SRV.version });
+      if (r.ok){ SRV.finalized = r.json.finalized; setReadonly(true); updateFin(); state('確定しました。次は「⑧ 出力」で閲覧用ファイル等を出力して配布してください', 'ok'); q('#srvAct').innerHTML = '<button type="button" id="srvGoExp" style="' + FIN_BTN + '">⑧ 出力へ</button>'; q('#srvGoExp').onclick = () => { q('#srvAct').innerHTML = ''; show('export'); }; return; }
+      state((r.json && r.json.message) || '確定できません', 'err');
+      if (r.status === 409 && r.json && r.json.error === 'conflict') pollOnce();
+    } catch (e) { state('確定できません（通信エラー）', 'err'); }
+  }
+  async function unfinalizeFlow(){
+    const ok = await modal('<h2 style="margin:0 0 6px;font-size:18px">確定を解除しますか</h2><p style="font-size:13px;margin:0">この月を再び編集できる状態に戻します。すでに配布した確定版のファイルとは内容が変わる可能性があります（修正後は再度「確定」して、配り直してください）。</p>', [{ label: 'キャンセル', value: false }, { label: '確定を解除する', value: true, pri: true }]);
+    if (!ok) return;
+    try {
+      const r = await call('POST', '/api/month/' + SRV.ym + '/unfinalize', {});
+      if (r.ok){ await loadMonth(SRV.ym); state('確定を解除しました。編集できます', 'ok'); return; }
+      state((r.json && r.json.message) || '確定を解除できません', 'err');
+    } catch (e) { state('確定を解除できません（通信エラー）', 'err'); }
+  }
+  // ---- 他の人の保存を検知する簡易ポーリング（30秒。タブ非表示中は停止。版番号だけ取得）----
+  let notified = '';
+  async function pollOnce(){
+    if (!SRV.on || !SRV.ym || document.hidden || SRV.busy || SRV.conflict || !q('#srvNew')) return;
+    try {
+      const r = await call('GET', '/api/month/' + SRV.ym + '/version');
+      if (!r.ok || !r.json) return;
+      const fk = r.json.finalized ? r.json.finalized.at : '', mk = SRV.finalized ? SRV.finalized.at : '';
+      if (r.json.version === SRV.version && fk === mk){ q('#srvNew').innerHTML = ''; notified = ''; return; }
+      const key = r.json.version + '|' + fk; if (key === notified) return; notified = key;
+      const who = r.json.updatedBy ? '職員ID ' + esc(r.json.updatedBy) + ' が ' + esc(fmtT(r.json.updatedAt)) + ' に' : '他の人が';
+      q('#srvNew').innerHTML = '<b style="background:var(--sun-t,#fff3c4);border-radius:999px;padding:2px 10px">最新版があります（' + who + '保存' + (fk !== mk ? '・確定状態が変わりました' : '') + '）</b> <button type="button" id="srvLatest" style="' + FIN_BTN + '">最新版を取り込む</button>';
+      q('#srvLatest').onclick = async () => {
+        if ((SRV.dirty || SRV.busy) && !confirm('この画面の未保存の変更は破棄されます。最新版を取り込みますか？')) return;
+        clearTimeout(SRV.timer); SRV.dirty = false; q('#srvNew').innerHTML = ''; notified = ''; await loadMonth(SRV.ym);
+      };
+    } catch (e) { /* 一時的な通信エラーは無視 */ }
+  }
+  setInterval(pollOnce, 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pollOnce(); });
   function fillMonths(){
     const sel = q('#srvMonth'); if (!sel) return;
     const cur = SRV.ym || (S ? ymOf(S) : null), list = months.slice();
@@ -2404,7 +2534,7 @@ document.addEventListener('click', e => {
   }
 
   // ---- 権限による編集UIの無効化 ----
-  const KEEP = new Set(['bCopy', 'bPrint', 'bView', 'secSel']);
+  const KEEP = new Set(['bCopy', 'bPrint', 'bView', 'secSel', 'maskSel']);
   let roObs = null;
   function applyRO(){
     document.body.dataset.role = SRV.user ? SRV.user.role : '';
@@ -2434,11 +2564,11 @@ document.addEventListener('click', e => {
     if (r.status === 401){ await showLogin('ログインし直してください'); return loadMonth(ym); }
     if (!r.ok){ state((r.json && r.json.message) || '読み込めません', 'err'); return false; }
     renumber(r.json.state);
-    SRV.ym = ym; SRV.version = r.json.version; SRV.writable = r.json.writable || []; SRV.conflict = false; SRV.dirty = false;
+    SRV.ym = ym; SRV.version = r.json.version; SRV.writable = r.json.writable || []; SRV.conflict = false; SRV.dirty = false; SRV.finalized = r.json.finalized || null;
     load(JSON.stringify(r.json.state)); curSec = 'all';
-    const u = SRV.user; setReadonly(u.role === 'staff' || (u.role !== 'admin' && !SRV.writable.length));
+    const u = SRV.user; setReadonly(!!SRV.finalized || u.role === 'staff' || (u.role !== 'admin' && !SRV.writable.length));
     const hint = u.role === 'manager1' && SRV.writable.length ? '（編集できるのは ' + SRV.writable.join('・') + ' のみ。他部署は照会のみ）' : '';
-    state(SRV.readonly ? '照会のみ' : '保存済み' + hint, SRV.readonly ? 'warn' : 'ok'); q('#srvAct').innerHTML = '';
+    state(SRV.finalized ? '確定済みのため編集できません（照会・出力は可能）' : SRV.readonly ? '照会のみ' : '保存済み' + hint, SRV.readonly ? 'warn' : 'ok'); q('#srvAct').innerHTML = ''; { const nw = q('#srvNew'); if (nw) nw.innerHTML = ''; } notified = ''; updateFin();
     fillMonths(); show('sheet');
     return true;
   }
@@ -2464,18 +2594,20 @@ document.addEventListener('click', e => {
     try {
       const r = await call('PUT', '/api/month/' + ym, { version: ver, state: S });
       if (r.ok){
-        SRV.ym = ym; SRV.version = r.json.version; if (!months.includes(ym)) months.push(ym); fillMonths();
+        SRV.ym = ym; SRV.version = r.json.version; if (!months.includes(ym)) months.push(ym); fillMonths(); updateFin();
         const ig = r.json.ignored || [];
         state(ig.length ? '保存済み（権限のない部署 ' + ig.join('・') + ' の変更は保存されません）' : '保存済み', ig.length ? 'warn' : 'ok');
       } else if (r.status === 409){
         SRV.conflict = true; SRV.latest = r.json && r.json.version; SRV.pendingYm = ym;
-        state('競合：他の人が先に保存しました。この画面の変更はまだ保存されていません', 'err');
+        { const j = r.json || {}; state('競合：' + (j.updatedBy ? '職員ID ' + j.updatedBy + ' が ' + fmtT(j.updatedAt) + ' に' : '他の人が') + '先に保存しました。この画面の変更はまだ保存されていません（取り込むと自分の変更は消え、上書きすると相手の変更が消えます）', 'err'); }
         q('#srvAct').innerHTML = '<button type="button" id="srvTake">最新版を取り込む（自分の変更は破棄）</button> <button type="button" id="srvForce">自分の版で上書き</button>';
         q('#srvTake').onclick = async () => { SRV.conflict = false; SRV.dirty = false; await loadMonth(SRV.pendingYm); };
         q('#srvForce').onclick = () => { if (!confirm('相手の保存内容（同じ部署の分）を、この画面の内容で上書きします。よろしいですか？')) return; SRV.ym = SRV.pendingYm; SRV.version = SRV.latest; SRV.conflict = false; q('#srvAct').innerHTML = ''; SRV.dirty = true; flush(); };
       } else if (r.status === 401){
         SRV.dirty = true; state('ログイン期限切れ。再ログインしてください', 'err');
         await showLogin('ログインし直してください（入力内容は保持されています）'); state('保存中…');
+      } else if (r.status === 423){
+        SRV.finalized = r.json && r.json.finalized; SRV.dirty = false; setReadonly(true); updateFin(); state('この月は確定済みのため保存できませんでした（確定を解除してから編集してください）', 'err');
       } else if (r.status === 403){
         state((r.json && r.json.message) || '保存できません', 'err'); setReadonly(true);
       } else { throw new Error('http ' + r.status); }

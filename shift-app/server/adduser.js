@@ -11,8 +11,8 @@
 //        「確定（ロック）・確定解除」の権限フラグ（canFinalize）を付け外し。admin は常に可能。
 //   node server/adduser.js --list
 // 共通オプション: --no-change-required  初期/再発行パスワードの「初回ログイン時の変更必須」を付けない（自動化・テスト用）
-// role: admin(システム管理者) / manager1(管理者Ⅰ) / manager2(管理者Ⅱ) / staff(一般職員)
-// グループ = 勤務表の部署名（例 2階,3階）。admin は全部署のため '*' でよい。
+// role: admin(システム管理者) / editor(編集者：全部署の下書きを編集。監査ログ閲覧・確定は不可) / manager1(管理者Ⅰ) / manager2(管理者Ⅱ) / staff(一般職員)
+// グループ = 勤務表の部署名（例 2階,3階）。admin・editor は全部署のため '*' でよい。
 const fs = require('fs');
 const crypto = require('crypto');
 const { ROLES, hashPassword, loadUsers, saveUsers, dataDir } = require('./userstore');
@@ -67,12 +67,12 @@ function parseCsv(text) {
       if (cells.length > 4 && cells.slice(4).some(c => c.trim())) e('列が多すぎます（グループは ; 区切りで1列に）');
       if (!ID_RE.test(id)) e(`職員ID「${id}」が不正です（英数字と _ . @ - のみ、40文字まで）`);
       if (!name || name.length > 50 || /[\u0000-\u001f]/.test(name)) e('氏名が空、または不正です');
-      if (!Object.prototype.hasOwnProperty.call(ROLES, role)) e(`ロール「${role}」が不正です（admin / manager1 / manager2 / staff）`);
+      if (!Object.prototype.hasOwnProperty.call(ROLES, role)) e(`ロール「${role}」が不正です（admin / editor / manager1 / manager2 / staff）`);
       if (id && seen.has(id)) e(`職員ID「${id}」がCSV内で重複しています`);
       if (id && Object.prototype.hasOwnProperty.call(users, id)) e(`職員ID「${id}」は既に登録済みです`);
       seen.add(id);
-      const groups = role === 'admin' ? ['*'] : (groups0 || '').split(';').map(s => s.trim()).filter(Boolean);
-      if (role !== 'admin' && ROLES[role] && !groups.length) e('グループ（部署名）が必要です');
+      const groups = (role === 'admin' || role === 'editor') ? ['*'] : (groups0 || '').split(';').map(s => s.trim()).filter(Boolean);
+      if (role !== 'admin' && role !== 'editor' && ROLES[role] && !groups.length) e('グループ（部署名）が必要です');
       if (groups.some(g => /[\u0000-\u001f,]/.test(g))) e('グループ名に使えない文字があります');
       list.push({ id, name, role, groups });
     }
@@ -128,10 +128,10 @@ function parseCsv(text) {
   const [id, name, role, groupsArg, pwArg] = a;
   if (!id || !name || !role) die('使い方: node server/adduser.js <職員ID> <氏名> <role> <グループ,グループ> [パスワード]  または --csv ファイル');
   if (!ID_RE.test(id)) die('職員IDは英数字と _ . @ - のみ（40文字まで）');
-  if (!ROLES[role]) die('role は admin / manager1 / manager2 / staff のいずれか');
+  if (!ROLES[role]) die('role は admin / editor / manager1 / manager2 / staff のいずれか');
   if (users[id]) die('その職員IDは既に存在します（パスワード変更は --passwd）');
-  const groups = role === 'admin' ? ['*'] : (groupsArg || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (role !== 'admin' && !groups.length) die('グループ（部署名）を指定してください');
+  const groups = (role === 'admin' || role === 'editor') ? ['*'] : (groupsArg || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (role !== 'admin' && role !== 'editor' && !groups.length) die('グループ（部署名）を指定してください');
   const pw = pwArg || genPassword(); checkPw(pw);
   users[id] = { name, role, groups, hash: await hashPassword(pw), createdAt: now() };
   if (!opt.noChange) users[id].mustChange = true;

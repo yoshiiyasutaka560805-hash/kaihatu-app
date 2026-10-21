@@ -6,6 +6,7 @@ const crypto = require('crypto');
 
 const ROLES = {
   admin: 'システム管理者',
+  editor: '編集者',
   manager1: '管理者(Ⅰ)',
   manager2: '管理者(Ⅱ)',
   staff: '一般職員',

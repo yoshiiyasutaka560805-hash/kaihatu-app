@@ -34,11 +34,11 @@
    ```
    表示される初期パスワードは、その場で本人に渡し、記録を残さない。
 7. ブラウザで `https://サーバー名:8443/` を開き、ログイン → パスワード変更 →「架空データで試す」で動作確認（確認後、データを消す）。
-8. フロア責任者・一般職員の登録（一括：CSV）：
+8. 作成関係者（約10名・全員 `editor`）の登録（一括：CSV。全職員のアカウントは作らない。確定できる人には `adduser.js --grant finalize 職員ID`）：
    ```powershell
    node C:\kaihatu-app\shift-app\server\adduser.js --csv users.csv --out C:\secure\initial-passwords.txt
    ```
-   （列：職員ID,氏名,ロール,グループ（;区切り）。ロールは admin / manager1 / manager2 / staff）
+   （列：職員ID,氏名,ロール,グループ（;区切り）。ロールは admin / editor / manager1 / manager2 / staff。editor は全部署のためグループ列は空欄可）
 9. **バックアップ**：タスクスケジューラで `deploy\backup.ps1` を毎日実行し、**別のサーバー／NAS** へ退避。復元訓練を一度行う。
 
 ## ファイアウォール（社内の指定範囲だけ許可）

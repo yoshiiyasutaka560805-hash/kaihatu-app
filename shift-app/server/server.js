@@ -119,15 +119,15 @@ function readBody(req) {
 
 // ---------- 権限 ----------
 function perms(u) {
-  const admin = u.role === 'admin', m = u.role === 'manager1' || u.role === 'manager2';
+  const admin = u.role === 'admin', all = admin || u.role === 'editor', m = u.role === 'manager1' || u.role === 'manager2';
   const g = new Set(u.groups || []);
   return {
-    readable: t => admin || u.role === 'manager1' || g.has(t),
-    writable: t => admin || (m && g.has(t)),
-    canWriteAny: admin || (m && g.size > 0),
+    readable: t => all || u.role === 'manager1' || g.has(t),
+    writable: t => all || (m && g.has(t)),   // admin・editor は全部署を編集可
+    canWriteAny: all || (m && g.size > 0),
   };
 }
-const publicUser = (id, u) => ({ id, name: u.name, role: u.role, roleLabel: ROLES[u.role], groups: u.role === 'admin' ? ['*'] : (u.groups || []), mustChange: !!u.mustChange,
+const publicUser = (id, u) => ({ id, name: u.name, role: u.role, roleLabel: ROLES[u.role], groups: u.role === 'admin' || u.role === 'editor' ? ['*'] : (u.groups || []), mustChange: !!u.mustChange,
   canFinalize: u.role === 'admin' || u.canFinalize === true });
 const canFinalize = u => u.role === 'admin' || u.canFinalize === true; // 確定・確定解除：admin と users.json の権限フラグ canFinalize を持つユーザー
 
@@ -178,7 +178,7 @@ function mergeState(existing, inc, user) {
   const touched = [], ignored = [];
   let out;
 
-  if (user.role === 'admin') {
+  if (user.role === 'admin' || user.role === 'editor') {
     out = clone(inc);
     out.sections.forEach(x => touched.push(x.title));
   } else {
@@ -431,6 +431,16 @@ async function handle(req, res) {
     return send(res, 200, { ok: true, version: cur.version });
   }
 
+  const vm = p.match(/^\/api\/month\/([^/]+)\/version$/);
+  if (vm && method === 'GET') {
+    const ym = vm[1];
+    if (!YM_RE.test(ym)) return err(res, 400, 'bad_ym', '年月の形式が不正です（例 2026-10）');
+    const m = readMonth(ym);
+    if (!m) return err(res, 404, 'no_month', 'この月のデータはありません');
+    if (!m.state.sections.some(x => P.readable(x.title))) return err(res, 403, 'forbidden', 'この月で閲覧できる部署がありません');
+    return send(res, 200, { ym, version: m.version, updatedAt: m.updatedAt, updatedBy: m.updatedBy, finalized: m.finalized || null }); // ポーリング用（内容は返さない）
+  }
+
   const mm = p.match(/^\/api\/month\/([^/]+)$/);
   if (mm) {
     const ym = mm[1];
@@ -455,7 +465,7 @@ async function handle(req, res) {
       if (cur && cur.finalized) { audit({ event: 'save_locked', user: a.id, ip, ym }); return send(res, 423, { error: 'finalized', message: 'この月は確定済みのため保存できません。確定を解除してから編集してください。', finalized: cur.finalized, shiftapp: true }); }
       if (b.version !== curV) {
         audit({ event: 'save_conflict', user: a.id, ip, ym, sent: b.version, current: curV });
-        return send(res, 409, { error: 'conflict', message: '他の人が先に保存しました。最新版を取り込んでください。', version: curV, shiftapp: true });
+        return send(res, 409, { error: 'conflict', message: '他の人が先に保存しました。最新版を取り込んでください。', version: curV, updatedAt: cur && cur.updatedAt, updatedBy: cur && cur.updatedBy, shiftapp: true });
       }
       const { merged, touched, ignored } = mergeState(cur && cur.state, b.state, a.user);
       if (!touched.length) { audit({ event: 'save_denied', user: a.id, ip, ym }); return err(res, 403, 'forbidden', '書き込める部署がありません'); }

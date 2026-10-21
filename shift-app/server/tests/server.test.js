@@ -486,6 +486,76 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'shiftapp-test2-'));
     } finally { fs.rmSync(outF, { force: true }); }
   });
 
+  await test('editor・確定ロック・権限フラグ・versionポーリング・競合メッセージ', async () => {
+    const dir = tmpDir(), srv = await startServer(dir);
+    const ad = (...a) => adduserIn(dir, [...a, '--no-change-required']);
+    try {
+      ad('adm', '管理A', 'admin', '*', PW); ad('ed1', '編集A', 'editor', '*', PW); ad('ed2', '編集B', 'editor', '*', PW);
+      ad('m2x', '管理二', 'manager2', '3階', PW); ad('stx', '一般', 'staff', '2階', PW);
+      const L = async id => (await login(id, PW, { base: srv.base })).cookie, o = c => ({ cookie: c, base: srv.base });
+      const adm = await L('adm'), e1 = await L('ed1'), e2 = await L('ed2'), m2c = await L('m2x'), stc = await L('stx');
+      // editor は全部署を新規作成・編集でき、/api/me に canFinalize=false、groups='*'
+      const me = (await api('GET', '/api/me', o(e1))).json;
+      assert.strictEqual(me.role, 'editor'); assert.strictEqual(me.canFinalize, false); assert.deepStrictEqual(me.groups, ['*']);
+      assert.strictEqual((await api('GET', '/api/me', o(adm))).json.canFinalize, true);
+      let r = await api('PUT', '/api/month/2026-10', { ...o(e1), body: { version: 0, state: mkState('M1') } });
+      assert.strictEqual(r.status, 200); let v = r.json.version;
+      const g = (await api('GET', '/api/month/2026-10', o(e2))).json;
+      assert.strictEqual(g.state.sections.length, 3); assert.deepStrictEqual(g.writable, ['2階', '3階', '相談']);
+      g.state.staff[2].cells[0] = '休'; g.state.staff[4].cells[0] = '休';
+      r = await api('PUT', '/api/month/2026-10', { ...o(e2), body: { version: g.version, state: g.state } });
+      assert.strictEqual(r.status, 200); assert.deepStrictEqual(r.json.ignored, []); v = r.json.version;
+      assert.strictEqual((await api('GET', '/api/month/2026-10', o(adm))).json.state.staff[4].cells[0], '休');
+      // 監査ログは admin のみ
+      assert.strictEqual((await api('GET', '/api/audit', o(e1))).status, 403);
+      assert.strictEqual((await api('GET', '/api/audit', o(adm))).status, 200);
+      // version エンドポイント（軽量・内容を含まない）
+      const vr = await api('GET', '/api/month/2026-10/version', o(e1));
+      assert.strictEqual(vr.status, 200); assert.strictEqual(vr.json.version, v); assert.strictEqual(vr.json.updatedBy, 'ed2');
+      assert.ok(!JSON.stringify(vr.json).includes('架空'));
+      assert.strictEqual((await api('GET', '/api/month/2026-09/version', o(e1))).status, 404);
+      assert.strictEqual((await api('GET', '/api/month/2026-10/version')).status, 401);
+      assert.strictEqual((await api('GET', '/api/month/2026-10/version', o(stc))).json.version, v); // 照会は自部署のみ可
+      // 競合メッセージ：誰が・いつ（職員IDと時刻のみ）
+      const cf = await api('PUT', '/api/month/2026-10', { ...o(e1), body: { version: g.version, state: g.state } });
+      assert.strictEqual(cf.status, 409); assert.strictEqual(cf.json.updatedBy, 'ed2'); assert.ok(cf.json.updatedAt);
+      // 確定：editor（フラグ無し）・manager2・staff は 403
+      for (const c of [e1, m2c, stc]) { assert.strictEqual((await api('POST', '/api/month/2026-10/finalize', { ...o(c), body: {} })).status, 403); assert.strictEqual((await api('POST', '/api/month/2026-10/unfinalize', { ...o(c), body: {} })).status, 403); }
+      assert.strictEqual((await api('POST', '/api/month/2026-10/finalize', { ...o(adm), body: {}, noCsrf: true })).status, 403);
+      // フラグ付与：既存セッションにも即時反映
+      adduserIn(dir, ['--grant', 'finalize', 'ed1']);
+      assert.ok(adduserIn(dir, ['--list']).includes('[確定権限]'));
+      assert.strictEqual((await api('GET', '/api/me', o(e1))).json.canFinalize, true);
+      adduserIn(dir, ['--grant', 'nope', 'ed1'], 1); adduserIn(dir, ['--grant', 'finalize', 'nobody'], 1);
+      assert.strictEqual((await api('POST', '/api/month/2026-10/finalize', { ...o(e1), body: { version: v - 1 } })).status, 409, '古い版では確定しない');
+      const nb = fs.readdirSync(path.join(dir, 'backups', '2026-10')).length;
+      r = await api('POST', '/api/month/2026-10/finalize', { ...o(e1), body: { version: v } });
+      assert.strictEqual(r.status, 200); assert.strictEqual(r.json.finalized.by, 'ed1'); assert.ok(r.json.finalized.at);
+      assert.strictEqual(fs.readdirSync(path.join(dir, 'backups', '2026-10')).length, nb + 1, '確定時にバックアップ1世代');
+      assert.strictEqual((await api('POST', '/api/month/2026-10/finalize', { ...o(adm), body: {} })).status, 409);
+      // ロック：全員の PUT が 423、GET に finalized
+      for (const c of [adm, e1, e2]) { const p = await api('PUT', '/api/month/2026-10', { ...o(c), body: { version: v, state: g.state } }); assert.strictEqual(p.status, 423); assert.strictEqual(p.json.finalized.by, 'ed1'); }
+      const gg = (await api('GET', '/api/month/2026-10', o(e1))).json; assert.strictEqual(gg.finalized.by, 'ed1'); assert.strictEqual(gg.version, v);
+      // 解除（権限のない editor 2 は不可）→ 保存可能に
+      assert.strictEqual((await api('POST', '/api/month/2026-10/unfinalize', { ...o(e2), body: {} })).status, 403);
+      assert.strictEqual((await api('POST', '/api/month/2026-10/unfinalize', { ...o(adm), body: {} })).status, 200);
+      assert.strictEqual((await api('POST', '/api/month/2026-10/unfinalize', { ...o(adm), body: {} })).status, 409);
+      assert.strictEqual((await api('GET', '/api/month/2026-10', o(e1))).json.finalized, null);
+      assert.strictEqual((await api('PUT', '/api/month/2026-10', { ...o(e2), body: { version: v, state: g.state } })).status, 200);
+      // 取消
+      adduserIn(dir, ['--revoke', 'finalize', 'ed1']);
+      assert.strictEqual((await api('POST', '/api/month/2026-10/finalize', { ...o(e1), body: {} })).status, 403);
+      // 監査ログ：イベントは残り、勤務内容・氏名は無い
+      const au = fs.readFileSync(path.join(dir, 'audit.log'), 'utf8');
+      for (const ev of ['finalize', 'unfinalize', 'finalize_denied', 'save_locked']) assert.ok(au.includes('"event":"' + ev + '"'), ev);
+      assert.ok(!au.includes('架空') && !au.includes('M1'));
+      // CSV で editor（グループ列は空でも可）
+      const csv = path.join(dir, 'u.csv'); fs.writeFileSync(csv, '職員ID,氏名,ロール,グループ\ned3,編集C,editor,\n');
+      adduserIn(dir, ['--csv', csv, '--no-change-required']);
+      assert.ok(/ed3\t編集C\teditor\t\*/.test(adduserIn(dir, ['--list'])));
+    } finally { await srv.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
   await test('.gitignore で data/ が除外されている', async () => {
     const gi = fs.readFileSync(path.join(ROOT, '..', '..', '.gitignore'), 'utf8');
     assert.ok(/shift-app\/server\/data\//.test(gi));
