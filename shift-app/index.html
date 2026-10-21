@@ -160,6 +160,14 @@ table.t input[type=number]{width:56px}
 .exMsg{min-height:1.4em;color:#0a4f99;font-weight:600}.exSum{font-size:13px}.exRow td{background:#fdecea}
 /* e3out */
 .e3steps{margin:6px 0 6px 1.2em;padding:0}.e3g{border-top:1px solid #d5dde8;margin-top:10px;padding-top:6px}.e3pv{font-size:12px}.e3pv td,.e3pv th{min-width:24px;text-align:center}.e3ta{max-width:100%}
+/* xlsx */
+.xl-drop{border:3px dashed #8fb8e0;background:var(--sky-t);border-radius:var(--r);padding:22px 14px;text-align:center;font-weight:700;color:#0a4f99;cursor:pointer}
+.xl-drop:hover,.xl-drop.over{background:var(--sun-t);border-color:#f0c24a}
+.xlerr{color:var(--err);font-weight:700}
+.xlsum{background:var(--mint-t);border-radius:var(--r-s);padding:10px 14px;margin:10px 0;line-height:1.7}
+.xlcard{border:2px solid var(--line);border-radius:var(--r-s);padding:4px 14px 6px;margin:8px 0;background:var(--surface)}
+.xlcard h4{margin:6px 0}.xlcard h4 small{margin-left:10px;font-weight:400;color:var(--muted);font-size:12px}
+.xlcard ul{margin:4px 0 6px;padding-left:1.3em}.xlwarn{color:#8a5a00}
 </style>
 </head>
 <body>
@@ -202,7 +210,17 @@ table.t input[type=number]{width:56px}
       <li><b><span class="n">6</span>出力する</b>⑥で常勤換算を確認し、印刷や閲覧用ファイルで共有。</li>
     </ol>
   </div>
+  <div class="card xl">
+    <h3>e3Shiftの勤務表Excel（.xlsx）をそのまま取り込む</h3>
+    <p class="note">e3Shiftから出力した勤務表のExcelを選びます。事業所ごとのファイル（2階・3階AB・3階CD…）を<b>まとめて複数選択</b>できます。凡例の勤務種別と時間、入力済みの希望休・休暇・勤務（固定として取込）も読み取ります。ファイルはこの端末のブラウザ内で読み込み、外部へは送信しません。</p>
+    <div id="xlDrop" class="xl-drop" tabindex="0" role="button" aria-label="Excelファイルを選ぶ、またはここにドロップ">ここに .xlsx ファイルをドラッグ＆ドロップ（クリックで選択も可）</div>
+    <input type="file" id="xlFile" accept=".xlsx" multiple hidden>
+    <p class="btnrow"><button id="bXlsx" class="pri">e3Shiftの勤務表Excel（.xlsx）を選ぶ</button></p>
+    <div id="xlBusy" class="note" aria-live="polite"></div>
+    <div id="xlReport"></div>
+  </div>
   <div class="card">
+  <h3>Excelからコピーして貼り付ける</h3>
   <p class="note">Excelの勤務表を<b>範囲選択→コピー→下の枠に貼り付け</b>（タブ区切り）。見出し行は「No／氏名／1〜31」の行と曜日行が必要です。職員名等の個人情報はこの端末のブラウザ内にのみ保存され、外部へ送信されません。</p>
   <textarea id="paste" placeholder="ここに貼り付け"></textarea>
   <p class="btnrow"><button id="bImport" class="pri">取り込む</button> <button id="bSample" class="b-sun">架空データで試す</button> <button id="bClear" class="b-red">保存データを消す</button></p>
@@ -249,7 +267,7 @@ document.addEventListener('click', e => { const g = e.target.closest && e.target
 'use strict';
 const SHIFTS = ['早','早E','日','遅','遅E','夜','準夜勤'];
 const NIGHT_FIX = ['／'];
-const LEAVE = new Set(['有休','リ休','誕休','忌引','産休','欠','研修','特休','公(忌引)']);
+const LEAVE = new Set(['有休','リ休','誕休','忌引','産休','欠','欠勤','研修','特休','公(忌引)']);
 const PALETTE = ['早','日','遅','遅E','夜','／','準夜勤','公','有休','リ休','誕休','研修','欠',''];
 
 function normSym(v){
@@ -996,8 +1014,9 @@ function initFte(t, S, seen){
   }
   if (seen) seen.add(t.name);
 }
-function shiftSpan(sym, S){
-  const h = S.fte.hours[sym];
+function shiftSpan(sym, S, t){
+  let h = S.fte.hours[sym];
+  { const lg = t && t.e3g != null && S.e3groups && S.e3groups[t.e3g] && S.e3groups[t.e3g].legend && S.e3groups[t.e3g].legend[sym]; if (lg && h) h = Object.assign({}, h, { s: lg.s, e: lg.e }); } // e3Shiftの凡例で事業所ごとに時間が違う記号は、所属事業所の時間を使う
   if (h){
     const s = hmToH(h.s), e0 = hmToH(h.e); if (s == null || e0 == null) return null;
     const e = e0 <= s ? e0 + 24 : e0;
@@ -1024,7 +1043,7 @@ function calcFte(S){
       const k = cls(v); if (k === 'blank' || k === 'off' || k === 'ake') continue;
       if (k === 'leave'){ const m = F.leave[v] || 'none'; if (m === 'work' || (m === 'add' && q.type === '常勤')) hours += daily; continue; }
       if ((F.exclude || []).includes(v)) continue;
-      const sp = shiftSpan(v, S);
+      const sp = shiftSpan(v, S, t);
       if (sp){ hours += sp.work; night += nightOverlap(sp, S); } else unknown++;
     }
     const fte = q.calc === '1固定' ? 1 : (q.week > 0 ? hours / (q.week * weeks) : 0);
@@ -1132,7 +1151,7 @@ function renderSheet(){
     }
   }
   $('#grid').innerHTML = h + '</tbody></table>';
-  const shown = issues.filter(x => curSec === 'all' || unitSecId(x.unit) === +curSec);
+  const shown = issues.filter(x => curSec === 'all' || secHasUnit(curSec, x.unit));
   const E = shown.filter(x => x.sev === 'E').length, W = shown.length - E;
   let ih = `<h3>チェック結果　<span class="tagE">エラー ${E}</span><span class="tagW">注意 ${W}</span></h3>`;
   for (const x of shown.slice(0, 400)){
@@ -1144,6 +1163,7 @@ function renderSheet(){
   { const lg = $('#legend'); if (lg) lg.innerHTML = '<b style="border:0;color:#666">記号：</b>' + [...new Set(S.shiftList.concat(S.staff.flatMap(t => t.cells).filter(Boolean)))].filter(k => S.colors[k]).map(k => { const c = S.colors[k], hh = S.fte && S.fte.hours[k]; return `<span><b style="background:${c.bg || '#fff'};color:${c.fg || '#222'}">${esc(k)}</b>${esc(c.name || '')}${hh && hh.s ? ' ' + esc(hh.s) + '〜' + esc(hh.e) : ''}</span>`; }).join(''); }
   cvRender();
 }
+function secHasUnit(id, unit){ return S.sections.some(x => x.id === +id && x.title === unit && x.auto); } // 同じ部署名の別セクション（e3の2ファイル）にも対応
 function unitSecId(unit){ const s = S.sections.find(x => x.title === unit && x.auto); return s ? s.id : -1; }
 
 function renderRules(){
@@ -1233,7 +1253,7 @@ function renderMaster(){
   <p>${Object.keys(H).filter(k => k.startsWith(mk)).map(k => `${+k.slice(8)}日 ${H[k]}`).join('、') || '国の祝日：この月はありません'}</p>
   <p>法人の追加休日：<input type="date" id="exDate"> <input id="exName" placeholder="名称（例 年末年始休業）" size="18"> <button id="bAddHol">追加</button>
   ${(S.extraHol || []).map((x, i) => `<span style="margin-left:8px">${x.date} ${esc(x.name)} <button data-delhol="${i}">削除</button></span>`).join('')}</p>`;
-  h += `<h4>シフト種別マスタ</h4><p class="note">記号ごとの名称・色・時間・連携コードを管理します。<b>時間を変えると、常勤換算の確認済みが外れます。</b>連携コードは、勤怠システムへの出力用に保管します（現時点では出力に使いません）。「公」「／」などの時間は不要です。</p>
+  h += e3MasterNote(S) + `<h4>シフト種別マスタ</h4><p class="note">記号ごとの名称・色・時間・連携コードを管理します。<b>時間を変えると、常勤換算の確認済みが外れます。</b>連携コードは、勤怠システムへの出力用に保管します（現時点では出力に使いません）。「公」「／」などの時間は不要です。</p>
   <table class="t"><tr><th>記号</th><th>名称</th><th>背景色</th><th>文字色</th><th>始業</th><th>終業</th><th>休憩(h)</th><th>実働(h)</th><th>連携コード</th></tr>`;
   for (const k of S.shiftList){
     const c = S.colors[k] || (S.colors[k] = { bg: '', fg: '', name: k, code: '' }), hh = S.fte.hours[k], sp = hh ? shiftSpan(k, S) : null;
@@ -1312,7 +1332,7 @@ const CV_ST = {
 function cvData(){
   if (!S) return [];
   const di = dayInfo(S), out = [];
-  const units = unitsOf(S).filter(u => curSec === 'all' || unitSecId(u.key) === +curSec);
+  const units = unitsOf(S).filter(u => curSec === 'all' || secHasUnit(curSec, u.key));
   for (const U of units){
     const rows = [];
     for (const sh of SHIFTS) for (const sc of scopesOf(U, sh)){
@@ -1725,6 +1745,355 @@ document.addEventListener('click', async e => {
   else { ta.style.display = 'block'; ta.focus(); ta.select(); m.textContent = 'コピーできませんでした。下の欄を選択済みです。Ctrl+C（Macは⌘C）でコピーしてください。'; }
 });
 // ==== E3OUT-END ====
+
+// ==== XLSX-START ====
+// e3Shift（勤怠システム）の勤務表Excel（.xlsx）を、ライブラリ・通信なしで直接読み込む。
+// ZIP解析（EOCD→セントラルディレクトリ→ローカルヘッダ）→ DecompressionStream('deflate-raw') → XML（正規表現で必要な要素だけ）→ 行×列
+const XLSX_MAX_BYTES = 80 * 1024 * 1024;
+async function xlsxInflate(u8, method){
+  if (method === 0) return u8;
+  if (method !== 8) throw new Error('Excelファイルの圧縮方式（' + method + '）に対応していません');
+  if (typeof DecompressionStream === 'undefined')
+    throw new Error('このブラウザはExcelファイルの展開に対応していません。Edge または Chrome の新しい版（2023年以降）でお試しください');
+  const ds = new DecompressionStream('deflate-raw');
+  const buf = await new Response(new Blob([u8]).stream().pipeThrough(ds)).arrayBuffer();
+  if (buf.byteLength > XLSX_MAX_BYTES) throw new Error('展開後のサイズが大きすぎます');
+  return new Uint8Array(buf);
+}
+function xlsxZipIndex(u8){
+  if (u8.length >= 8 && u8[0] === 0xD0 && u8[1] === 0xCF && u8[2] === 0x11 && u8[3] === 0xE0)
+    throw new Error('古い形式のExcelファイル（.xls）です。Excelで「名前を付けて保存」→「Excelブック（.xlsx）」にしてから選び直してください');
+  const bad = () => new Error('Excelファイル（.xlsx）として読めません。e3Shiftから出力した .xlsx をそのまま選んでください');
+  if (u8.length < 22 || u8[0] !== 0x50 || u8[1] !== 0x4B) throw bad();
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  let e = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 22 - 65535); i--) if (dv.getUint32(i, true) === 0x06054b50){ e = i; break; }
+  if (e < 0) throw bad();
+  const n = dv.getUint16(e + 10, true); let p = dv.getUint32(e + 16, true);
+  if (n === 0xFFFF || p === 0xFFFFFFFF) throw new Error('ZIP64形式のExcelファイルには対応していません');
+  const idx = new Map(), dec = new TextDecoder('utf-8');
+  for (let i = 0; i < n; i++){
+    if (p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) throw bad();
+    const nl = dv.getUint16(p + 28, true), el = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true);
+    idx.set(dec.decode(u8.subarray(p + 46, p + 46 + nl)), { flag: dv.getUint16(p + 8, true), method: dv.getUint16(p + 10, true),
+      csize: dv.getUint32(p + 20, true), usize: dv.getUint32(p + 24, true), off: dv.getUint32(p + 42, true) });
+    p += 46 + nl + el + cl;
+  }
+  return idx;
+}
+async function xlsxEntryBytes(u8, ent){
+  if (ent.flag & 1) throw new Error('パスワード付きのExcelファイルは読み込めません。パスワードを外して保存し直してください');
+  if (ent.usize > XLSX_MAX_BYTES) throw new Error('Excelファイルの内容が大きすぎます');
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength), o = ent.off;
+  if (o + 30 > u8.length || dv.getUint32(o, true) !== 0x04034b50) throw new Error('Excelファイルが壊れているようです（ローカルヘッダ）');
+  const st = o + 30 + dv.getUint16(o + 26, true) + dv.getUint16(o + 28, true);
+  if (st + ent.csize > u8.length) throw new Error('Excelファイルが途中で切れているようです');
+  return xlsxInflate(u8.subarray(st, st + ent.csize), ent.method);
+}
+// XML文字参照・Excelの _xHHHH_ エスケープ（改行 _x000D_ など）を戻す
+function xlsxUnesc(s){
+  return String(s).replace(/&(#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos);/g, (m, g) => {
+    if (g[0] === '#') { const c = g[1] === 'x' ? parseInt(g.slice(2), 16) : +g.slice(1); try { return String.fromCodePoint(c); } catch (e) { return ''; } }
+    return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[g];
+  }).replace(/_x([0-9A-Fa-f]{4})_/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
+}
+// <si>/<is> の中の文字列。リッチテキスト（<r><t>）は連結、ふりがな（<rPh>）は除く
+function xlsxTextOf(inner){
+  inner = inner.replace(/<rPh\b[\s\S]*?<\/rPh>/g, '').replace(/<phoneticPr\b[^>]*\/>/g, '');
+  let s = '', m; const re = /<t\b[^>]*?(?:\/>|>([\s\S]*?)<\/t>)/g;
+  while ((m = re.exec(inner))) s += xlsxUnesc(m[1] || '');
+  return s;
+}
+function xlsxSharedStrings(xml){
+  const out = [], re = /<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g; let m;
+  while ((m = re.exec(xml))) out.push(m[1] == null ? '' : xlsxTextOf(m[1]));
+  return out;
+}
+const xlsxAttr = (tag, name) => { const m = new RegExp('\\s' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\')').exec(tag); return m ? xlsxUnesc(m[1] != null ? m[1] : m[2]) : null; };
+const xlsxColIdx = s => { let n = 0; for (const ch of s) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
+function xlsxSheetRows(xml, sst){
+  const rows = []; let rowN = 0, m; const reRow = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g;
+  while ((m = reRow.exec(xml))){
+    const rr = xlsxAttr('<row' + m[1], 'r'); rowN = rr ? +rr : rowN + 1;
+    if (!m[2] || rowN < 1 || rowN > 5000) continue;
+    const row = rows[rowN - 1] || (rows[rowN - 1] = []); let colN = -1, c; const reC = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+    while ((c = reC.exec(m[2]))){
+      const ref = /\sr="([A-Z]+)\d+"/.exec(c[1]); colN = ref ? xlsxColIdx(ref[1]) : colN + 1;
+      if (colN < 0 || colN > 600 || c[2] == null) continue;
+      const t = xlsxAttr('<c' + c[1], 't'), v = /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(c[2]), is = /<is\b[^>]*>([\s\S]*?)<\/is>/.exec(c[2]);
+      let val = '';
+      if (t === 's') val = v ? (sst[+v[1]] || '') : '';
+      else if (t === 'inlineStr') val = is ? xlsxTextOf(is[1]) : '';
+      else if (t === 'str') val = v ? xlsxUnesc(v[1]) : '';
+      else if (t === 'b') val = v ? (v[1].trim() === '1' ? 'TRUE' : 'FALSE') : '';
+      else if (t === 'e') val = '';
+      else if (v){ val = v[1].trim(); if (/^-?\d+\.0+$/.test(val)) val = val.replace(/\.0+$/, ''); }
+      row[colN] = val;
+    }
+  }
+  const w = rows.reduce((a, r) => Math.max(a, r ? r.length : 0), 0);
+  for (let i = 0; i < rows.length; i++){ const r = rows[i] || []; rows[i] = Array.from({ length: w }, (_, j) => r[j] == null ? '' : r[j]); }
+  return rows;
+}
+// 最初のシートを行×列の2次元配列（文字列）にする。rows.sheetName にシート名
+async function readXlsxRows(arrayBuffer){
+  const u8 = arrayBuffer instanceof Uint8Array ? arrayBuffer : new Uint8Array(arrayBuffer), idx = xlsxZipIndex(u8), dec = new TextDecoder('utf-8');
+  const get = async nm => idx.has(nm) ? dec.decode(await xlsxEntryBytes(u8, idx.get(nm))) : null;
+  let path = null, sheetName = '';
+  const wb = await get('xl/workbook.xml'), rel = await get('xl/_rels/workbook.xml.rels');
+  if (wb && rel){
+    const sh = /<sheet\b[^>]*>/.exec(wb);
+    if (sh){
+      sheetName = xlsxAttr(sh[0], 'name') || ''; const rid = xlsxAttr(sh[0], 'r:id'); let m; const re = /<Relationship\b[^>]*>/g;
+      while (rid && (m = re.exec(rel))) if (xlsxAttr(m[0], 'Id') === rid){ const tg = xlsxAttr(m[0], 'Target') || ''; path = tg[0] === '/' ? tg.slice(1) : 'xl/' + tg.replace(/^\.\//, ''); break; }
+    }
+  }
+  if (!path || !idx.has(path)) path = idx.has('xl/worksheets/sheet1.xml') ? 'xl/worksheets/sheet1.xml' : [...idx.keys()].find(k => /^xl\/worksheets\/[^/]+\.xml$/.test(k));
+  if (!path) throw new Error('Excelファイルの中にシートが見つかりません');
+  const sx = await get('xl/sharedStrings.xml'), sst = sx ? xlsxSharedStrings(sx) : [];
+  const rows = xlsxSheetRows(await get(path), sst); rows.sheetName = sheetName || '勤務表';
+  return rows;
+}
+
+// ---- e3Shift勤務表 → アプリの状態 ----
+const e3Norm = v => String(v == null ? '' : v).normalize('NFKC').replace(/\s+/g, '');
+const e3Hm = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? pad2(+m[1]) + ':' + m[2] : ''; };
+const e3Range = (s, e) => (s || '') + '～' + (e || '');
+// 1ファイル（1事業所）を解析
+function e3ParseSheet(rows, fileName){
+  const R = (r, c) => { const row = rows[r]; return row && row[c] != null ? String(row[c]) : ''; };
+  const W = rows.reduce((a, r) => Math.max(a, r ? r.length : 0), 0), notes = [];
+  let hr = -1, dc = -1;
+  for (let r = 0; r < Math.min(rows.length, 15) && hr < 0; r++)
+    for (let c = 2; c < W - 2; c++) if (R(r, c).trim() === '1' && R(r, c + 1).trim() === '2' && R(r, c + 2).trim() === '3'){ hr = r; dc = c; break; }
+  if (hr < 0) throw new Error(`${fileName}：e3Shiftの勤務表として読めません（見出し行「No／氏名／1 2 3…」が見つかりません）`);
+  const find = (re, dflt) => { for (let c = 0; c < dc; c++) if (re.test(e3Norm(R(hr, c)))) return c; return dflt; };
+  const noC = find(/^No$/i, dc - 4), nameC = find(/^氏名$/, dc - 3), koyoC = find(/^職員区分$/, dc - 2);
+  // 年月：見出し（令和○年○月度）→ なければ「2026/11」形式のセル
+  const head = rows.slice(0, 6).map(r => (r || []).map(x => String(x || '').normalize('NFKC')).join(' ')).join(' ');
+  let y = null, m = null, mm = head.match(/令和\s*(\d+)\s*年\s*(\d+)\s*月/), sm = head.match(/(20\d\d)\s*[\/年.\-]\s*(\d{1,2})/);
+  if (mm){ y = 2018 + (+mm[1]); m = +mm[2]; }
+  if (sm){ if (!mm){ y = +sm[1]; m = +sm[2]; } else if (+sm[1] !== y || +sm[2] !== m) notes.push(`年月の表記が一致しません（見出し ${y}年${m}月／セル ${sm[1]}/${sm[2]}）。見出しを採用しました`); }
+  if (!y || !(m >= 1 && m <= 12)) throw new Error(`${fileName}：年月（令和○年○月度）が読み取れません`);
+  // 事業所名
+  const off = head.match(/事業所\s*[：:]\s*(\S+)/), office = off ? off[1] : '';
+  const dm = /^(\d+階)(.*)$/.exec(office);
+  const dept = dm ? dm[1] : (office || fileName.replace(/\.xlsx$/i, '')), rest = dm ? dm[2].trim() : '';
+  const label = /^[A-Za-z]{1,3}$/.test(rest) ? rest : '';
+  // 日数
+  const dim = new Date(y, m, 0).getDate(); let D = 0;
+  while (D < 31 && R(hr, dc + D).trim() === String(D + 1)) D++;
+  if (D > dim){ notes.push(`${dim + 1}日以降の列は${m}月（${dim}日まで）を超えるため無視しました`); D = dim; }
+  else if (D < dim) notes.push(`日付列が${D}日分しかありません（${m}月は${dim}日）`);
+  // 職員行：連番・氏名・職員区分がそろった行。「勤務時間合計」で終了。職員でない行（担当表示など）は除く
+  const staff = []; let first = -1, skipped = 0;
+  for (let r = hr + 1; r < rows.length; r++){
+    const nm = R(r, nameC).replace(/\s+/g, ' ').trim();
+    if (/合計/.test(nm)) break;
+    const isStaff = /^\d+$/.test(R(r, noC).trim()) && nm && R(r, koyoC).trim();
+    if (!isStaff){ if (first >= 0 && nm) skipped++; continue; }
+    if (first < 0) first = r;
+    const cells = []; for (let d = 0; d < D; d++) cells.push(normSym(R(r, dc + d)));
+    staff.push({ row: r, name: nm, koyo: e3Norm(R(r, koyoC)), cells });
+  }
+  if (!staff.length) throw new Error(`${fileName}：職員の行が見つかりません`);
+  if (skipped) notes.push(`職員でない行${skipped}行（担当表示など）は取り込みません`);
+  // 凡例（左のA〜E列：D=名称、E=時間）。時間が片側だけ（夜 16:00～／明け ～09:00）の記号は時間なし扱い
+  const legend = []; const seen = new Set();
+  for (let r = first; r < Math.min(rows.length, first + 80); r++){
+    const sym = normSym(R(r, 3)); if (!sym || sym === '◇' || seen.has(sym)) continue; seen.add(sym);
+    const tm = /^(\d{1,2}:\d{2})?\s*[~〜-]\s*(\d{1,2}:\d{2})?$/.exec(R(r, 4).normalize('NFKC').trim());
+    legend.push({ sym, s: tm ? e3Hm(tm[1]) : '', e: tm ? e3Hm(tm[2]) : '' });
+  }
+  return { fileName, office, dept, label, y, m, D, notes, skipped, staff, legend, firstRow: first + 1, firstCol: dc + 1,
+           lastRow: staff[staff.length - 1].row, sheetName: rows.sheetName || '勤務表' };
+}
+// 氏名の照合用（全角半角・空白の違いを無視）
+const e3NameKey = s => String(s || '').normalize('NFKC').replace(/\s+/g, '');
+const E3_CARRY = ['canNight', 'canJun', 'canE', 'canEarly', 'canDay', 'canLate', 'target', 'nightFixed', 'nightMax', 'junMax', 'maxConsec', 'part',
+                  'fte', 'memo', 'empId', 'hireDate', 'retireDate', 'leaveStart', 'leaveEnd', 'holidayOk', 'reqExempt', 'pref'];
+// 解析済みの複数ファイル → 1つの状態。opts.old（現在のS）と opts.merge で台帳設定を引き継ぐ
+function importE3Files(files, opts){
+  opts = opts || {};
+  if (!files || !files.length) throw new Error('ファイルが選ばれていません');
+  const ps = files.map(f => e3ParseSheet(f.rows, f.name || 'ファイル'));
+  const ym = ps[0].y * 100 + ps[0].m;
+  const badYm = ps.find(p => p.y * 100 + p.m !== ym);
+  if (badYm) throw new Error(`年月が異なるファイルが混ざっています（${ps[0].fileName}：${ps[0].y}年${ps[0].m}月／${badYm.fileName}：${badYm.y}年${badYm.m}月）`);
+  ps.sort((a, b) => (parseInt(a.dept) || 99) - (parseInt(b.dept) || 99) || a.dept.localeCompare(b.dept) || a.label.localeCompare(b.label));
+  for (let i = 1; i < ps.length; i++) if (ps[i].dept === ps[i - 1].dept && ps[i].label === ps[i - 1].label && ps[i].office)
+    throw new Error(`同じ事業所（${ps[i].office}）のファイルが重複しています（${ps[i - 1].fileName}・${ps[i].fileName}）`);
+  const old = opts.old && opts.merge ? opts.old : null;
+  const y = ps[0].y, m = ps[0].m, sections = [], staff = [], notes = [];
+  const S = { y, m, D: Math.max(...ps.map(p => p.D)), sections, staff, needs: {}, minNeeds: {}, holidays: [], maxConsec: old && old.maxConsec ? old.maxConsec : 5, importNotes: notes, reqLimit: old && old.reqLimit !== undefined ? old.reqLimit : 2 };
+  const clone = o => JSON.parse(JSON.stringify(o));
+  S.fte = old && old.fte ? clone(old.fte) : defaultFte();
+  S.colors = old && old.colors ? clone(old.colors) : defaultColors();
+  S.shiftList = old && old.shiftList ? old.shiftList.slice() : Object.keys(DEFAULT_COLORS);
+  S.extraHol = old && old.extraHol ? clone(old.extraHol) : [];
+  syncHolidays(S);
+  applyE3Patterns(S); // 凡例との比較の基準になる勤務種別パターン（未登録のものだけ追加される）
+  const di = dayInfo(S), wkend = di.cl.filter(x => x === 'we').length;
+  const oldMap = new Map(); if (old) for (const t of old.staff){ const k = e3NameKey(t.name); if (k && !oldMap.has(k)) oldMap.set(k, t); }
+  let carried = 0; const groups = [], e3groups = [];
+  ps.forEach((p, gi) => {
+    const hasNight = p.legend.some(x => x.sym === '夜'), hasE = p.legend.some(x => x.sym === '遅E'), hasJun = p.legend.some(x => x.sym === '準夜勤');
+    const sec = { id: gi, title: p.dept, D: p.D, auto: hasNight }; sections.push(sec);
+    const g = { file: p.fileName, office: p.office, title: p.dept, label: p.label, staffN: p.staff.length, filled: 0, hasNight, hasE, hasJun,
+                legend: {}, diffs: [], regs: [], unknown: [], notes: p.notes.slice(), carried: 0 };
+    // 凡例：時間つきの記号を、マスタに未登録なら追加／違う時間ならこの事業所だけの値として保持して知らせる
+    for (const x of p.legend){
+      if (!x.s || !x.e) continue;
+      g.legend[x.sym] = { s: x.s, e: x.e };
+      const h = S.fte.hours[x.sym];
+      if (h){ if (e3Hm(h.s) !== x.s || e3Hm(h.e) !== x.e) g.diffs.push({ sym: x.sym, cur: e3Range(e3Hm(h.s), e3Hm(h.e)), leg: e3Range(x.s, x.e) }); }
+      else {
+        S.fte.hours[x.sym] = { s: x.s, e: x.e, brk: legalBreak(spanOf(x)) }; g.regs.push(x.sym);
+        if (!S.colors[x.sym]) S.colors[x.sym] = { bg: '', fg: '', name: x.sym, code: '' };
+        if (!S.shiftList.includes(x.sym)) S.shiftList.push(x.sym);
+        const nm = /^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/.exec(x.sym);
+        if (nm && (Math.abs(hmToH(x.s) - +nm[1]) > 0.01 || Math.abs(hmToH(x.e) - +nm[2]) > 0.01)) g.notes.push(`記号「${x.sym}」は凡例の時間（${e3Range(x.s, x.e)}）が記号名と食い違っています`);
+      }
+    }
+    for (const x of p.legend) if (!x.s && cls(x.sym) === 'leave' && !S.colors[x.sym]){ // 欠勤など時間のない休暇の記号
+      S.colors[x.sym] = { bg: '#fff3a3', fg: '', name: x.sym, code: '' }; if (!S.shiftList.includes(x.sym)) S.shiftList.push(x.sym); }
+    const ids = []; let prev = p.firstRow - 2;
+    for (const r of p.staff){
+      while (++prev < r.row) ids.push(null);
+      const t = { id: staff.length, sec: gi, label: p.label, koyo: r.koyo, name: r.name, cells: r.cells.slice() };
+      const part = /非/.test(r.koyo);
+      t.auto = hasNight && !part; t.unit = p.dept + '/' + p.label; t.from = 0;
+      t.canNight = t.auto; t.canJun = t.auto && hasJun; t.canE = t.auto && hasE;
+      t.pref = { '早': 1, '日': 1, '遅': 1 };
+      t.pins = t.cells.map(c => c !== '');
+      t.req = t.cells.map(c => REQ_TYPES.includes(c) && c !== '希望休' ? c : '');
+      t.reqApplied = t.req.map(c => !!c);
+      t.target = t.auto ? Math.max(wkend, t.cells.filter(c => c === '公').length) : 0;
+      t.e3g = gi;
+      const o = oldMap.get(e3NameKey(r.name));
+      if (o){ for (const k of E3_CARRY) if (o[k] !== undefined) t[k] = clone(o[k]); if (!hasE) t.canE = false; carried++; g.carried++; }
+      g.filled += t.cells.filter(c => c !== '').length; staff.push(t); ids.push(t.id);
+    }
+    const sy = {}; for (const r of p.staff) for (const c of r.cells) if (c) sy[c] = (sy[c] || 0) + 1;
+    g.symCount = sy;
+    groups.push({ file: p.fileName, title: p.dept, label: p.label, staffIds: ids, firstRow: p.firstRow, firstCol: p.firstCol, days: p.D, sheetName: p.sheetName });
+    e3groups.push(g);
+  });
+  S.e3 = { groups }; S.e3groups = e3groups;
+  for (const t of staff){ initExtras(t, S); }
+  { const seen = new Set(); for (const t of staff) initFte(t, S, seen); }
+  applyE3Patterns(S);
+  // 凡例にも時間にも載っていない記号（時間が分からず常勤換算に入らない）
+  e3groups.forEach((g, gi) => {
+    for (const k in g.symCount){
+      if (cls(k) !== 'work' && cls(k) !== 'ake') continue;
+      if (!S.fte.hours[k] && !shiftSpan(k, S) && k !== '夜' && k !== '／') g.unknown.push({ sym: k, n: g.symCount[k] });
+    }
+    if (g.legend['早E'] || g.symCount['早E']) g.notes.push('「早E」は自動配置の対象外です（入力済みのマスは固定のまま残ります）');
+  });
+  // 自動作成の人数の既定（履歴がないため）：ユニット型（AB・CD）＝早1・日1・遅1（目標 平日 早1・日2・遅2）・夜1人／ユニット。従来型（ラベルなし）＝早2・日1・遅1（目標 早4・日2・遅2）・夜2人。準夜勤はフロア共通1人、遅Eは凡例のある事業所があれば1人
+  const nd = (a, b) => ({ wk: a, we: b });
+  for (const U of unitsOf(S)){
+    const eOk = e3groups.some((g, i) => ps[i].dept === U.key && g.hasE && U.staff.some(t => t.e3g === i));
+    for (const l of U.labels){
+      const k = U.key + '/' + l, trad = !l;
+      S.needs[k] = trad ? { '早': nd(4, 2), '日': nd(2, 1), '遅': nd(2, 1), '夜': nd(2, 2) } : { '早': nd(1, 1), '日': nd(2, 1), '遅': nd(2, 1), '夜': nd(1, 1) };
+      S.minNeeds[k] = trad ? { '早': nd(2, 2), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(2, 2) } : { '早': nd(1, 1), '日': nd(1, 1), '遅': nd(1, 1), '夜': nd(1, 1) };
+    }
+    const f = U.key + '/*';
+    S.needs[f] = { '遅E': eOk ? nd(1, 1) : nd(0, 0), '準夜勤': nd(1, 1) };
+    S.minNeeds[f] = { '遅E': eOk ? nd(1, 1) : nd(0, 0), '準夜勤': nd(1, 1) };
+  }
+  S.e3carry = carried; S.e3merged = !!old;
+  return S;
+}
+// 取込結果の説明（画面表示・メッセージ用）
+function e3Summary(S){
+  const lines = [];
+  for (const g of S.e3groups || []){
+    const o = [`${g.office || g.file}：職員${g.staffN}名・入力済み${g.filled}マス`, g.hasNight ? '夜勤あり（自動作成の対象）' : '夜勤なし（自動作成の対象外）'];
+    lines.push({ head: o.join('／'), g, notes: g.notes });
+  }
+  return lines;
+}
+async function e3ReadFiles(fileList){
+  const out = [];
+  for (const f of fileList){
+    let rows;
+    try { rows = await readXlsxRows(await f.arrayBuffer()); }
+    catch (e) { throw new Error(`${f.name}：${e.message}`); }
+    out.push({ name: f.name, rows });
+  }
+  return out;
+}
+// ⑦マスタ用：事業所ごとに時間が違う記号の注記
+function e3MasterNote(S){
+  const gs = S.e3groups || [], by = {};
+  for (const g of gs) for (const d of g.diffs || []){ const k = d.sym + '|' + d.cur + '|' + d.leg; (by[k] = by[k] || { d, offices: [] }).offices.push(g.office || g.title); }
+  const ks = Object.keys(by); if (!ks.length) return '';
+  return `<div class="exWarn" style="margin:8px 0"><b>e3Shiftの凡例で、マスタと時間が違う記号があります</b>（取込元の事業所ごとの時間は保持しています。常勤換算では事業所別の時間を使います）<br>` +
+    ks.map(k => `${esc(by[k].d.sym)}：${esc(by[k].d.leg)}（マスタ ${esc(by[k].d.cur)}）… ${esc(by[k].offices.join('・'))}`).join('<br>') + '</div>';
+}
+// ==== XLSX-END ====
+
+// ==== XLSX-UI-START ====
+// ① 取込：e3Shift勤務表Excel（.xlsx）の選択・ドラッグ&ドロップ・結果表示
+(function(){
+  const drop = $('#xlDrop'), inp = $('#xlFile'), busy = $('#xlBusy'), rep = $('#xlReport');
+  if (!drop || !inp || !busy || !rep) return;
+  const ask = msg => { try { return confirm(msg); } catch (e) { return null; } };
+  function renderReport(){
+    const gs = S.e3groups || [], au = unitsOf(S).map(u => `${esc(u.key)}（${u.staff.length}名）`).join('、') || 'なし';
+    const wk = dayInfo(S).cl.filter(x => x === 'we').length;
+    let h = `<div class="xlsum"><b>${S.y}年${S.m}月</b>　${gs.length}事業所・${S.staff.length}名を取り込みました。<br>自動作成の対象：${au}`
+      + (S.e3merged ? `<br>前の台帳から設定を引き継いだ職員：<b>${S.e3carry}名</b>（氏名が一致した職員の夜勤可否・目標公休数・職員ID・メモなど）` : '')
+      + `<br><span class="note">人数の既定（③で変更できます）：ユニット（AB/CD）＝夜勤1人／日、従来型＝夜勤2人／日、準夜勤＝フロア共通1人、遅E＝凡例のある事業所のみ1人。公休の目標日数は土日祝の${wk}日を仮に入れています（④の台帳で変更）。</span></div>`;
+    for (const g of gs){
+      h += `<div class="xlcard"><h4>${esc(g.office || g.file)}<small>${esc(g.file)}</small></h4><ul>`
+        + `<li>職員 <b>${g.staffN}名</b>（常勤・特定技能は自動作成の対象、非常勤は対象外）／入力済みのマス <b>${g.filled}件</b>（固定として取り込みました）</li>`
+        + `<li>${g.hasNight ? '夜勤あり：このフロアは自動作成の対象です' : '凡例に夜勤がありません：自動作成の対象外です'}</li>`
+        + (g.carried ? `<li>前の台帳から引き継いだ職員 ${g.carried}名</li>` : '')
+        + (g.regs.length ? `<li>凡例から新しく登録した記号 ${g.regs.length}件：${esc(g.regs.join('、'))}</li>` : '')
+        + g.diffs.map(d => `<li class="xlwarn">時間の違い：${esc(d.sym)} は ${esc(d.leg)}（マスタ ${esc(d.cur)}）。この事業所だけの時間として保持します</li>`).join('')
+        + g.unknown.map(u => `<li class="xlwarn">時間が分からない記号：${esc(u.sym)}（${u.n}件）。固定のまま取り込みます（常勤換算には入りません）</li>`).join('')
+        + g.notes.map(n => `<li class="xlwarn">${esc(n)}</li>`).join('') + '</ul></div>';
+    }
+    h += '<p class="btnrow"><button class="pri" data-go="req">② 希望休入力へ進む</button> <button data-go="rules">③ 必要人数を確認</button> <button data-go="sheet">⑤ 勤務表を見る</button></p>';
+    rep.innerHTML = h;
+  }
+  async function xlImport(list){
+    const files = [...list], t0 = Date.now(); rep.innerHTML = '';
+    if (!files.length) return;
+    const bad = files.filter(f => !/\.xlsx$/i.test(f.name));
+    if (bad.length){ busy.textContent = `${bad.map(f => f.name).join('、')} は取り込めません。e3Shiftから出力した .xlsx を選んでください（.xls・.csv は不可）`; busy.className = 'note xlerr'; return; }
+    busy.className = 'note'; busy.textContent = `読み込み中…（${files.length}ファイル）`;
+    try {
+      const parsed = await e3ReadFiles(files);
+      let merge = false;
+      if (S){
+        const a = ask('現在の保存データがあります。\n\n[OK]＝統合して取り込む（氏名が一致する職員の夜勤可否・目標公休数・職員ID・メモなどを引き継ぎます）\n[キャンセル]＝次の確認へ');
+        if (a) merge = true;
+        else if (a === false && !ask('引き継がずに、現在の保存データを置き換えますか？\n\n[OK]＝置き換える／[キャンセル]＝取り込まない')){ busy.textContent = '取り込みを中止しました'; return; }
+      }
+      const next = importE3Files(parsed, { old: S, merge });
+      S = next; save(); curSec = 'all'; renderMonthBox();
+      const au = unitsOf(S).map(u => `${u.key}(${u.staff.length}名)`).join('、');
+      $('#importMsg').textContent = `取込完了：${S.y}年${S.m}月・${S.e3groups.length}事業所・${S.staff.length}名。自動作成の対象：${au || 'なし'}`;
+      busy.textContent = `読み込みました（${((Date.now() - t0) / 1000).toFixed(1)}秒）`;
+      renderReport(); setStatus('');
+    } catch (e) {
+      busy.className = 'note xlerr'; busy.textContent = '取り込めませんでした：' + (e && e.message || e);
+    }
+  }
+  $('#bXlsx').onclick = () => inp.click();
+  drop.onclick = () => inp.click();
+  drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); inp.click(); } };
+  inp.onchange = () => { const l = [...inp.files]; inp.value = ''; xlImport(l); };
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); xlImport(e.dataTransfer ? e.dataTransfer.files : []); };
+})();
+// ==== XLSX-UI-END ====
 
 // ---- イベント ----
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.p));
