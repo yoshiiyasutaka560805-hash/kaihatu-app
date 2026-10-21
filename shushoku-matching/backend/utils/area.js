@@ -25,15 +25,15 @@ function parseArea(text, defaultPref = null) {
   let pref = PREFS.find(p => s.startsWith(p)) || null;
   if (pref) s = s.slice(pref.length);
   else pref = normalizePref(defaultPref);
-  // 政令市＋区
-  let m = s.match(/^(.+?市)(.+?区)/);
+  // 政令市＋区（市より前に区・町・村が出てくる住所は対象外）
+  let m = s.match(/^([^区町村]+?市)([^市町村\d０-９−ー\-]{1,4}?区)/);
   if (m) return { pref, city: m[1], ward: m[2] };
-  // 郡＋町村
-  m = s.match(/^(.+?郡)?(.+?[市町村])/);
+  // 「武蔵村山市」「羽村市」「町田市」など、名前に町・村を含む市（市が5文字以内に出てくる場合は市を優先）
+  m = s.match(/^(.+?郡)?([^区郡]{1,4}?市)/);
   if (m) return { pref, city: m[2], ward: null };
-  // 東京23区など
-  m = s.match(/^(.+?区)/);
-  if (m) return { pref, city: m[1], ward: null };
+  // 郡＋町村／東京23区：最初に出てくる「市・区・町・村」で区切る（住所の後ろの駅名等を拾わない）
+  m = s.match(/^(.+?郡)?(.+?[市区町村])/);
+  if (m) return { pref, city: m[2], ward: null };
   return { pref, city: s, ward: null };
 }
 

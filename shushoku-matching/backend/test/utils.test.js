@@ -69,3 +69,17 @@ test('収集禁止情報の検知', () => {
   const r = detectProhibited(['本籍は○○県、支持政党は…', '介護経験3年']);
   assert.deepEqual(r.map(x => x.term).sort(), ['政党', '支持政党', '本籍'].sort());
 });
+
+test('住所の市区町村：駅名や町名を拾わない・名前に町村を含む市', () => {
+  const { parseArea } = require('../utils/area');
+  const c = t => parseArea(t).city;
+  assert.equal(c('東京都港区虎ノ門１−２３−１ 森タワー 神谷町駅から徒歩'), '港区');
+  assert.equal(c('東京都八王子市子安町'), '八王子市');
+  assert.equal(c('東京都武蔵村山市'), '武蔵村山市');
+  assert.equal(c('東京都羽村市'), '羽村市');
+  assert.equal(c('東京都西多摩郡瑞穂町'), '瑞穂町');
+  assert.equal(c('千代田区市ケ谷'), '千代田区');
+  assert.equal(c('東京都東大和市桜が丘２丁目１４２−１ 105区画'), '東大和市');
+  assert.deepEqual(parseArea('横浜市保土ケ谷区'), { pref: null, city: '横浜市', ward: '保土ケ谷区' });
+  assert.deepEqual(parseArea('大阪府堺市北区'), { pref: '大阪府', city: '堺市', ward: '北区' });
+});

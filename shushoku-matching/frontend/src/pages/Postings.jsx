@@ -5,7 +5,7 @@ import { useAction, useApi } from '../hooks/useApi';
 import { Badge, Card, ErrorText, Loading, PageHeader, yen, WAGE_LABEL } from '../components/ui';
 import { SOURCE_LABEL } from './PostingDetail';
 
-const TABS = [['', 'すべて'], ['hw', 'HW求人'], ['own', '自社受理求人']];
+const TABS = [['', 'すべて'], ['hw', 'HW求人'], ['web', 'ネット求人'], ['own', '自社受理求人']];
 
 function wageText(p) {
   if (p.wage_min == null && p.wage_max == null) return '—';
@@ -209,12 +209,12 @@ export default function Postings() {
                     <td>{p.origin === 'own' ? <Badge color="green">自社</Badge> : p.origin === 'web' ? <Badge color="yellow">ネット</Badge> : <Badge color="blue">HW</Badge>}</td>
                     <td>{p.company_name}</td>
                     <td>{p.job_title}</td>
-                    <td>{p.facility_type || '—'}</td>
-                    <td>{[p.prefecture, p.city].filter(Boolean).join(' ') || '—'}</td>
-                    <td>{p.employment_type || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{p.facility_type || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{p.city || p.prefecture || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{p.employment_type || '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{wageText(p)}</td>
-                    <td>{p.expiry_date || '—'}</td>
-                    <td>{SOURCE_LABEL[p.source] || p.source || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{p.expiry_date || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{p.source_file && p.origin === 'web' ? p.source_file : (SOURCE_LABEL[p.source] || p.source || '—')}</td>
                     <td style={{ whiteSpace: 'nowrap' }}><ActiveCell p={p} onChanged={list.reload} /></td>
                   </tr>
                 ))}

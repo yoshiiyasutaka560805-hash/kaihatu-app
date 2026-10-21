@@ -75,7 +75,7 @@ export function postingValue(field, v) {
   return String(v);
 }
 
-export const SOURCE_LABEL = { web_search: 'ネット検索', hw_api: 'HW求人API（自動取得）', hw_provision: 'オンライン提供（労働局）', manual: 'CSV手動取込', own: '自社登録', ocr: '求人票AI読取' };
+export const SOURCE_LABEL = { web_search: 'ネット検索', web_csv: 'ネット求人CSV', hw_api: 'HW求人API（自動取得）', hw_provision: 'オンライン提供（労働局）', manual: 'CSV手動取込', own: '自社登録', ocr: '求人票AI読取' };
 
 // 職業安定法の労働条件明示項目（バックエンド postingStore.DISCLOSURE_ITEMS と対応）
 const DISCLOSURE_FIELDS = new Set(['job_title', 'description', 'job_change_scope', 'employment_term', 'trial_period', 'address',

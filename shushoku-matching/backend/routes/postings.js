@@ -35,7 +35,7 @@ router.get('/', (req, res) => {
   }
   if (req.query.city) { where.push('city LIKE @city'); params.city = `%${req.query.city}%`; }
   res.json(getDb().prepare(`SELECT id, posting_no, origin, employer_id, company_name, prefecture, city, job_title, facility_type,
-    employment_type, wage_type, wage_min, wage_max, expiry_date, received_date, source, source_url, is_active, closed_manually, hw_posting_no
+    employment_type, wage_type, wage_min, wage_max, expiry_date, received_date, source, source_file, source_url, is_active, closed_manually, hw_posting_no
     FROM job_postings ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY fetched_at DESC LIMIT 1000`).all(params));
 });
 

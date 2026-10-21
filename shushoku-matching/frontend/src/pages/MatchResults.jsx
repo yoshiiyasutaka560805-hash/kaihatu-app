@@ -141,7 +141,7 @@ function MatchCard({ m, seekerId, introOptions, declineReasons, selected, onTogg
   };
 
   const wage = `${WAGE_LABEL[m.wage_type] || ''} ${yen(m.wage_min)}〜${yen(m.wage_max)}`;
-  const nights = m.shift_work || m.nights_per_month ? `夜勤あり（月${m.nights_per_month ?? '?'}回）` : '夜勤なし';
+  const nights = m.shift_work || m.nights_per_month ? `夜勤あり（月${m.nights_per_month ?? '?'}回）` : m.shift_work == null ? '夜勤：記載なし' : '夜勤なし';
   const hours = m.shift_work ? '交替制' : `${m.work_start || '?'}〜${m.work_end || '?'}`;
 
   return (
