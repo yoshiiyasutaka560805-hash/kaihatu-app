@@ -1260,10 +1260,12 @@ function renderRules(){
 
 function renderMonthBox(){
   const el = $('#monthBox'); if (!el) return;
-  if (!S){ el.innerHTML = ''; return; }
+  const fileCard = document.getElementById('authBox') ? '' : `<hr><h4>作業データをファイルに保存・読み込み（共有フォルダでの共有用）</h4><p class="note">作業中の内容（職員・人数・設定・勤務表すべて）を1つのファイル（.json）にして、共有フォルダに保存できます。別のPCで「読み込む」と、続きから作業できます。<b>同じファイルを同時に複数人で編集しない</b>でください（後から保存した内容で上書きされます）。ファイルには職員名等の個人情報が含まれるため、共有フォルダのアクセス権を、作成関係者だけに限定してください。</p>
+  <button id="bSaveFile" class="pri">作業データをファイルに保存</button> <button id="bLoadFile">ファイルから読み込む</button> <input type="file" id="fLoad" accept=".json,application/json" style="display:none"> <span id="fileMsg" class="note"></span>`;
+  if (!S){ el.innerHTML = fileCard; return; }
   const nm = S.m === 12 ? [S.y + 1, 1] : [S.y, S.m + 1];
   el.innerHTML = `<hr><h4>新しい月を始める</h4><p class="note">現在：${S.y}年${S.m}月。職員・必要人数・個別条件は引き継ぎ、勤務と希望休をクリアします（前月末が夜勤なら、翌月1日に「／」を引き継ぎます）。<b>前月分は先に「Excel用にコピー」で保存してください。</b></p>
-  <input type="number" id="nmY" value="${nm[0]}" style="width:70px"> 年 <input type="number" id="nmM" value="${nm[1]}" min="1" max="12" style="width:50px"> 月 <button id="bNewMonth" class="pri">この月を始める</button>`;
+  <input type="number" id="nmY" value="${nm[0]}" style="width:70px"> 年 <input type="number" id="nmM" value="${nm[1]}" min="1" max="12" style="width:50px"> 月 <button id="bNewMonth" class="pri">この月を始める</button>` + fileCard;
 }
 function renderReq(){
   const p = $('#p-req');
@@ -2201,6 +2203,48 @@ $('#bSample').onclick = () => {
   generateAll(S, 'rebuild'); save(); curSec = 'all'; show('sheet');
   setStatus('架空データ（例）です。マスをクリックして直したり、③で人数を変えて再作成できます');
 };
+// ---- 作業データのファイル保存・読み込み ----
+function stateFileName(){ return S ? `勤務表_${S.y}-${String(S.m).padStart(2, '0')}_作業データ.json` : '勤務表_作業データ.json'; }
+async function saveStateFile(){
+  if (!S) return alert('先に取込を行ってください');
+  const text = JSON.stringify({ app: 'shiftapp', v: 1, savedAt: new Date().toISOString(), ym: `${S.y}-${S.m}`, S });
+  const msg = $('#fileMsg');
+  try {
+    if (window.showSaveFilePicker){
+      const h = await showSaveFilePicker({ suggestedName: stateFileName(), types: [{ description: '勤務表の作業データ', accept: { 'application/json': ['.json'] } }] });
+      const w = await h.createWritable(); await w.write(text); await w.close();
+      if (msg) msg.textContent = `保存しました：${h.name}`; return;
+    }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = stateFileName(); a.click();
+  if (msg) msg.textContent = `「${stateFileName()}」をダウンロードしました。共有フォルダへ移動してください。`;
+}
+function loadStateText(text){
+  let o; try { o = JSON.parse(text); } catch (e) { throw new Error('ファイルを読み取れません（JSONではありません）'); }
+  if (!o || o.app !== 'shiftapp' || !o.S || !Array.isArray(o.S.staff) || !Array.isArray(o.S.sections)) throw new Error('勤務表アプリの作業データファイルではありません');
+  const prev = S; load(JSON.stringify(o.S));
+  if (!S){ S = prev; throw new Error('読み込めませんでした（データが壊れている可能性があります）'); }
+  save(); return o;
+}
+document.addEventListener('click', async e => {
+  if (e.target.id === 'bSaveFile') saveStateFile();
+  if (e.target.id === 'bLoadFile'){ const f = $('#fLoad'); if (f) f.click(); }
+});
+document.addEventListener('change', e => {
+  if (e.target.id !== 'fLoad') return;
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  const msg = $('#fileMsg'); const rd = new FileReader();
+  rd.onload = () => {
+    try {
+      if (S && !confirm('現在の作業内容を、ファイルの内容で置き換えます。よろしいですか？')){ e.target.value = ''; return; }
+      const o = loadStateText(String(rd.result)); curSec = 'all';
+      if (msg) msg.textContent = `読み込みました：${S.y}年${S.m}月（保存日時 ${o.savedAt ? new Date(o.savedAt).toLocaleString('ja-JP') : '不明'}）`;
+      setStatus(`${S.y}年${S.m}月の作業データを読み込みました`); show('sheet');
+    } catch (err) { if (msg) msg.textContent = '読み込めません：' + err.message; }
+    e.target.value = '';
+  };
+  rd.readAsText(f, 'utf-8');
+});
 $('#bClear').onclick = () => { if (confirm('保存データを削除します。よろしいですか？')){ try { localStorage.removeItem(KEY); } catch (e) {} S = null; $('#importMsg').textContent = '削除しました'; } };
 $('#secSel').onchange = e => { curSec = e.target.value; renderSheet(); };
 function runGen(mode){
